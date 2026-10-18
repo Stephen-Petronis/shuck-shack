@@ -1,4 +1,4 @@
-// Shuck Shack — trace the shell, pop the lid, fill the order.
+// Shuck Shack — trace the shell, pop the lid, fill the order, buy better gear, move up.
 (() => {
   'use strict';
   const C = window.SHUCK_CONFIG;
@@ -9,7 +9,7 @@
   const ARM = {
     hand: { wrist: [231, 238], tip: [5, 2], glove: [150, 192] },
     cuff: { opening: [27, 50], end: [178, 196] },
-    color: '#e4732d', shade: '#b9531c', thick: 52,
+    color: '#e4732d', thick: 52,
   };
   // Where things sit in the counter art (1536 x 1024).
   const BG = { w: 1536, h: 1024, boardCx: 768, boardCy: 455, boardW: 795, boardH: 520,
@@ -21,19 +21,17 @@
   const ctx = canvas.getContext('2d');
   const hud = $('hud');
   const els = {
-    order: $('hudOrder'), count: $('hudCount'), score: $('hudScore'),
+    venue: $('hudVenue'), count: $('hudCount'), earned: $('hudEarned'),
     clockFill: $('clockFill'), clockText: $('clockText'),
-    title: $('screenTitle'), intro: $('screenOrder'), over: $('screenOver'), pause: $('screenPause'),
-    introTitle: $('orderTitle'), introSub: $('orderSub'), introStats: $('orderStats'),
-    overTitle: $('overTitle'), overScore: $('overScore'), overBest: $('overBest'), overDetail: $('overDetail'),
-    titleBest: $('titleBest'),
+    title: $('screenTitle'), hub: $('screenHub'), result: $('screenResult'), pause: $('screenPause'),
+    hubBody: $('hubBody'), hubCash: $('hubCash'), hubVenue: $('hubVenue'), hubShift: $('hubShift'),
+    btnStart: $('btnStart'), titleSave: $('titleSave'),
     btnMute: $('btnMute'), btnPause: $('btnPause'),
   };
-  document.querySelectorAll('[data-title]').forEach((n) => { n.textContent = C.title; });
   document.title = C.title;
   if (C.arcadeUrl) document.querySelectorAll('.arcade-link').forEach((a) => { a.href = C.arcadeUrl; a.hidden = false; });
-
   const reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const money = (n) => '$' + Math.round(n).toLocaleString();
 
   // ---------- Assets ----------
   const IMG = {};
@@ -55,11 +53,68 @@
     assetJobs.push(loadImg(n + '_top', `assets/oyster_${n}_top.webp`));
     assetJobs.push(loadImg(n + '_bottom', `assets/oyster_${n}_bottom.webp`));
   });
+  C.venues.forEach((v) => { if (v.background) assetJobs.push(loadImg('bg_' + v.id, v.background)); });
 
-  // ---------- Best score ----------
-  const BEST_KEY = 'shuckshack.best';
-  function getBest() { try { return +localStorage.getItem(BEST_KEY) || 0; } catch (e) { return 0; } }
-  function setBest(v) { try { localStorage.setItem(BEST_KEY, String(v)); } catch (e) { /* storage blocked */ } }
+  // Knife colors: repaint the blade part of the hand sprite once per look.
+  const KNIFE = {};
+  const KNIFE_URL = {};
+  function makeKnives() {
+    const h = IMG.hand; if (!h) return;
+    const base = document.createElement('canvas'); base.width = h.width; base.height = h.height;
+    const bx = base.getContext('2d'); bx.drawImage(h, 0, 0);
+    const src = bx.getImageData(0, 0, h.width, h.height);
+    const [tx, ty] = ARM.hand.tip, ux = ARM.hand.wrist[0] - tx, uy = ARM.hand.wrist[1] - ty, L2 = ux * ux + uy * uy;
+    const looks = {
+      steel: (l) => [l * 1.04, l * 1.06, l * 1.1],
+      blue:  (l) => [l * 0.62, l * 0.82, l * 1.12],
+      gold:  (l) => [l * 1.15 + 30, l * 0.9 + 10, l * 0.28],
+      rust:  (l, x, y) => { const spot = ((x * 7 + y * 13) % 23 < 6) ? 0.72 : 1; return [l * 0.95 * spot + 20, l * 0.62 * spot, l * 0.38 * spot]; },
+    };
+    Object.entries(looks).forEach(([name, fn]) => {
+      const c = document.createElement('canvas'); c.width = h.width; c.height = h.height;
+      const x = c.getContext('2d'); const out = x.createImageData(h.width, h.height);
+      const s = src.data, d = out.data;
+      for (let y = 0; y < h.height; y++) for (let xx = 0; xx < h.width; xx++) {
+        const i = (y * h.width + xx) * 4;
+        d[i] = s[i]; d[i + 1] = s[i + 1]; d[i + 2] = s[i + 2]; d[i + 3] = s[i + 3];
+        if (!s[i + 3]) continue;
+        const t = ((xx - tx) * ux + (y - ty) * uy) / L2;
+        if (t > 0.37) continue;
+        const l = (s[i] + s[i + 1] + s[i + 2]) / 3;
+        if (l < 80) continue;                      // keep the ink outline
+        const [r, g, b] = fn(l, xx, y);
+        d[i] = Math.min(255, r); d[i + 1] = Math.min(255, g); d[i + 2] = Math.min(255, b);
+      }
+      x.putImageData(out, 0, 0);
+      KNIFE[name] = c;
+      try { KNIFE_URL[name] = c.toDataURL('image/png'); } catch (e) { KNIFE_URL[name] = ''; }
+    });
+  }
+
+  // ---------- Save ----------
+  const SAVE_KEY = 'shuckshack.save.v1';
+  function freshSave() {
+    const owned = {}; C.gear.forEach((g) => { owned[g.id] = 0; });
+    return { cash: C.startCash || 0, owned, venue: C.venues[0].id, unlocked: [C.venues[0].id],
+             shifts: 0, oysters: 0, bestShift: 0, cuts: 0 };
+  }
+  function loadSave() {
+    try {
+      const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+      if (s && s.owned) { const f = freshSave(); return Object.assign(f, s, { owned: Object.assign(f.owned, s.owned) }); }
+    } catch (e) { /* no save yet or storage blocked */ }
+    return freshSave();
+  }
+  function writeSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch (e) { /* storage blocked */ } }
+  let SAVE = loadSave();
+  const gearDef = (id) => C.gear.find((g) => g.id === id);
+  const tier = (id) => { const g = gearDef(id); return g.tiers[Math.min(SAVE.owned[id] || 0, g.tiers.length - 1)]; };
+  const venue = () => C.venues.find((v) => v.id === SAVE.venue) || C.venues[0];
+  const cutMult = () => (tier('knife').cut ?? 1) * (tier('glove').cut ?? 1);
+  const napkinTaps = () => tier('aid').taps ?? 3;
+  const timeMult = () => tier('ice').time ?? 1;
+  const cashMult = () => tier('jar').cash ?? 1;
+  const shiftClock = (n, v = venue()) => Math.round(n * v.secsPerOyster * timeMult() + C.shiftExtraTime);
 
   // ---------- Sound ----------
   let ac = null, muted = false;
@@ -90,7 +145,7 @@
   }
   const SFX = {
     pop() { noise(0.12, 0.25, 1500); tone(300, 0.18, 'square', 0.1, 1200); },
-    grade(rank) { // rank 0 = best
+    grade(rank) {
       const base = [784, 659, 587, 523, 392, 220][rank] || 330;
       if (rank >= 5) { tone(220, 0.35, 'sawtooth', 0.08, 110); return; }
       [1, 1.25, 1.5].slice(0, 3 - Math.min(2, Math.floor(rank / 2))).forEach((m, i) => tone(base * m, 0.16, 'square', 0.07, 0, i * 0.07));
@@ -101,10 +156,13 @@
     orderUp() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'square', 0.07, 0, i * 0.09)); },
     late() { [392, 330, 262, 196].forEach((f, i) => tone(f, 0.25, 'sawtooth', 0.08, 0, i * 0.16)); },
     slide() { noise(0.1, 0.06, 300); },
+    cash() { [1319, 1568, 2093].forEach((f, i) => tone(f, 0.09, 'square', 0.05, 0, i * 0.05)); },
+    buy() { [523, 784, 1047, 1568].forEach((f, i) => tone(f, 0.12, 'triangle', 0.09, 0, i * 0.06)); noise(0.08, 0.1, 3000, 0.2); },
+    nope() { tone(180, 0.18, 'square', 0.07); },
   };
   function setMuted(m) {
     muted = m; els.btnMute.setAttribute('aria-pressed', String(m));
-    els.btnMute.querySelector('.ico').textContent = m ? 'Sound off' : 'Sound on';
+    els.btnMute.textContent = m ? 'Sound off' : 'Sound on';
     try { localStorage.setItem('shuckshack.muted', m ? '1' : '0'); } catch (e) { /* ignore */ }
   }
 
@@ -123,14 +181,12 @@
     L.cy = top + availH * 0.47;
     L.tol = Math.max(C.minTolerancePx, L.D * C.traceTolerance);
 
-    // Counter background: cover the screen, keep the cutting board under the oyster.
     const s = Math.max(W / BG.w, H / BG.h, (L.D * 1.2) / BG.boardH, (L.D * 1.2) / BG.boardW);
     let ox = L.cx - BG.boardCx * s, oy = L.cy - BG.boardCy * s;
     ox = Math.min(0, Math.max(W - BG.w * s, ox));
     oy = Math.min(0, Math.max(H - BG.h * s, oy));
     L.bg = { s, ox, oy };
 
-    // Napkin: use the one painted on the counter when it's on screen, otherwise a sprite.
     const n = BG.napkin;
     const nx = ox + n.x * s, ny = oy + n.y * s, nw = n.w * s, nh = n.h * s;
     if (nx >= 2 && nx + nw <= W - 2 && ny >= top && ny + nh <= H - 2 && nw >= 56) {
@@ -140,7 +196,6 @@
       L.napkin = { x: 12, y: H - h - 14, w, h, painted: false };
     }
 
-    // Arm: cuff pinned to the bottom-right corner.
     L.armScale = (L.D * 0.46) / Math.hypot(ARM.hand.wrist[0] - ARM.hand.tip[0], ARM.hand.wrist[1] - ARM.hand.tip[1]);
     const as = L.armScale * 1.05;
     L.cuff = { s: as, x: W + 18 * as - ARM.cuff.end[0] * as, y: H + 10 * as - ARM.cuff.end[1] * as };
@@ -150,73 +205,53 @@
     if (cur) cur.pts = screenPath(cur);
   }
 
-  // ---------- Game state ----------
-  let state = 'title';      // title | intro | play | over
-  let phase = 'idle';       // idle | slideIn | trace | shucked | slideOut
+  // ---------- State ----------
+  let state = 'title';      // title | hub | play | result
+  let phase = 'idle';       // idle | ready | slideIn | trace | shucked | slideOut
   let paused = false;
-  let hurt = null;          // { phase: 'ouch'|'napkin', t, taps }
-  let G = null;             // run data
-  let cur = null;           // current oyster
+  let hurt = null;          // { t, taps }
+  let G = null;             // the current shift
+  let cur = null;           // the current oyster
   let lastShape = null;
-  let T = 0;                // seconds since load
+  let T = 0;
+  let readyT = 0;
+  let hubTab = 'work';
+  let resetArmed = false;
   const pointer = { x: 0, y: 0, down: false, id: null, tracing: false, lastX: 0, lastY: 0, hover: false, type: 'touch' };
   const fx = { lid: null, stamp: null, popups: [], drops: [], splash: [], shake: 0, ouch: null, wipe: 0 };
   let armTip = { x: 0, y: 0 };
 
-  function newGame() {
-    G = { order: 0, score: 0, shuckedTotal: 0, bandages: [], oystersSinceStart: 0, orderStats: null };
-    fx.lid = null; fx.stamp = null; fx.popups = []; fx.drops = []; fx.splash = []; hurt = null;
-    startOrderIntro();
+  // ---------- Shift ----------
+  function pickOrderSize(v) {
+    const sizes = []; for (let n = v.orderMin; n <= v.orderMax; n += 6) sizes.push(n);
+    return sizes[(Math.random() * sizes.length) | 0];
   }
-
-  function parFor(order) { return Math.max(C.minParTime, C.parTime * Math.pow(C.parShrink, order - 1)); }
-
-  function startOrderIntro() {
-    G.order += 1;
-    G.need = G.order * C.oystersPerDozen;
-    G.done = 0;
-    G.par = parFor(G.order);
-    G.clockMax = G.need * G.par * C.orderTimeFactor + C.orderTimeBonus;
+  function startShift() {
+    const v = venue();
+    const need = pickOrderSize(v);
+    G = { venue: v, need, done: 0, clockMax: shiftClock(need, v), clock: 0, par: v.secsPerOyster * C.parFactor,
+          pay: 0, tips: 0, accSum: 0, cuts: 0, served: 0, bandages: [], fast: 0 };
     G.clock = G.clockMax;
-    G.orderAccSum = 0;
-    const dz = G.order === 1 ? 'A dozen' : `${G.order} dozen`;
-    els.introTitle.textContent = `Order #${G.order}`;
-    els.introSub.textContent = `${dz} on the half shell`;
-    let stats = `${G.need} oysters, ${Math.round(G.clockMax)} seconds on the clock.`;
-    if (G.orderStats) stats = `${G.orderStats} Next up: ` + stats;
-    els.introStats.textContent = stats;
-    state = 'intro'; phase = 'idle'; cur = null;
-    showScreen('intro');
-    updateHud();
-  }
-
-  function beginOrder() {
-    state = 'play';
-    showScreen(null);
-    nextOyster();
+    fx.lid = null; fx.stamp = null; fx.popups = []; fx.drops = []; fx.splash = []; hurt = null; cur = null;
+    state = 'play'; phase = 'ready'; readyT = T; paused = false;
+    showScreen(null); updateHud(); updateClock();
+    SFX.orderUp();
   }
 
   function pickShape() {
     let s; do { s = SHAPE_NAMES[(Math.random() * SHAPE_NAMES.length) | 0]; } while (SHAPE_NAMES.length > 1 && s === lastShape);
     lastShape = s; return s;
   }
-
   function nextOyster() {
     const shape = pickShape();
-    cur = {
-      shape, flip: Math.random() < 0.5, x: W + L.D, t0: T, startT: 0,
-      covered: new Uint8Array(SHAPES[shape].length), nCovered: 0,
-      errSum: 0, n: 0, off: 0, trail: [], slipRolled: false,
-      cutAt: null,
-    };
+    cur = { shape, flip: Math.random() < 0.5, x: W + L.D, t0: T, startT: 0,
+            covered: new Uint8Array(SHAPES[shape].length), nCovered: 0,
+            errSum: 0, n: 0, off: 0, trail: [], slipRolled: false, cutAt: null };
     cur.pts = screenPath(cur);
-    const canCut = G.oystersSinceStart >= C.safeOysters;
-    if (canCut && Math.random() < C.randomCutChance) cur.cutAt = 0.3 + Math.random() * 0.5;
-    phase = 'slideIn';
-    pointer.tracing = false;
+    if (G.done >= C.safeOysters && Math.random() < C.randomCutChance * cutMult()) cur.cutAt = 0.3 + Math.random() * 0.5;
+    phase = 'slideIn'; pointer.tracing = false;
     SFX.slide();
   }
-
   function screenPath(o) {
     const D = L.D, x0 = L.cx - D / 2, y0 = L.cy - D / 2;
     return SHAPES[o.shape].map(([px, py]) => ({ x: x0 + (o.flip ? 1 - px : px) * D, y: y0 + py * D }));
@@ -235,7 +270,6 @@
     }
     return Math.sqrt(best);
   }
-
   function traceTo(x, y) {
     const dx = x - pointer.lastX, dy = y - pointer.lastY;
     const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 5));
@@ -245,7 +279,6 @@
     }
     pointer.lastX = x; pointer.lastY = y;
   }
-
   function sample(x, y) {
     const o = cur, tol = L.tol, tol2 = tol * tol;
     const d = distToPath(o.pts, x, y);
@@ -256,22 +289,18 @@
       const p = o.pts[i], ex = p.x - x, ey = p.y - y;
       if (ex * ex + ey * ey <= tol2) { o.covered[i] = 1; o.nCovered++; }
     }
-    o.trail.push({ x, y, t: T });
-    if (o.trail.length > 60) o.trail.shift();
-
+    o.trail.push({ x, y, t: T }); if (o.trail.length > 60) o.trail.shift();
     const progress = o.nCovered / o.pts.length;
-    const canCut = G.oystersSinceStart >= C.safeOysters;
-    if (canCut && !o.slipRolled && d > tol * C.slipDistance) {
+    if (G.done >= C.safeOysters && !o.slipRolled && d > tol * C.slipDistance) {
       o.slipRolled = true;
-      if (Math.random() < C.slipCutChance) { cutHand(); return; }
+      if (Math.random() < C.slipCutChance * cutMult()) { cutHand(); return; }
     }
     if (o.cutAt !== null && progress >= o.cutAt) { o.cutAt = null; cutHand(); return; }
     if (progress >= C.coverageToFinish) finishOyster();
   }
-
   function accuracyOf(o) {
     if (!o.n) return 0;
-    const mean = o.errSum / o.n / L.tol;            // in tolerances
+    const mean = o.errSum / o.n / L.tol;
     let a = 1 - (mean - 0.18) / 1.1;
     a *= 1 - 0.55 * (o.off / o.n);
     return Math.max(0, Math.min(1, a));
@@ -282,30 +311,67 @@
     pointer.tracing = false;
     const acc = accuracyOf(o);
     const secs = Math.max(0.3, T - o.startT);
-    const speed = Math.max(C.speedMultMin, Math.min(C.speedMultMax, G.par / secs));
-    const pts = Math.round((C.basePoints + acc * C.accuracyPoints) * speed);
-    G.score += pts; G.done += 1; G.shuckedTotal += 1; G.oystersSinceStart += 1; G.orderAccSum += acc;
     let rank = C.grades.findIndex((g) => acc >= g.minAccuracy); if (rank < 0) rank = C.grades.length - 1;
     const grade = C.grades[rank];
+    const pay = Math.max(1, Math.round(G.venue.pay * (C.gradePay[rank] ?? 1)));
+    const tip = secs <= G.par ? Math.max(1, Math.round(G.venue.pay * C.speedTipFactor)) : 0;
+    G.pay += pay; G.tips += tip; if (tip) G.fast++;
+    G.done += 1; G.accSum += acc;
 
     fx.lid = { x: o.x, y: L.cy, vx: (Math.random() < 0.5 ? -1 : 1) * (L.D * (1.2 + Math.random())), vy: -L.D * 4.2,
                rot: 0, vr: (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 6), shape: o.shape, flip: o.flip, t: 0 };
     fx.stamp = { text: grade.name, color: grade.color, t: 0, rank };
-    fx.popups.push({ text: `+${pts}`, sub: speed >= 1.15 ? `×${speed.toFixed(1)} speedy` : speed < 0.85 ? `×${speed.toFixed(1)} slow` : '', x: L.cx, y: L.cy + L.D * 0.42, t: 0 });
+    fx.popups.push({ text: `+${money(pay + tip)}`, sub: tip ? 'speedy tip!' : '', x: L.cx, y: L.cy + L.D * 0.42, t: 0, money: true });
     for (let i = 0; i < 14; i++) {
       const a = Math.random() * Math.PI * 2, v = L.D * (0.8 + Math.random() * 1.6);
       fx.splash.push({ x: L.cx, y: L.cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v - L.D, r: 2 + Math.random() * 5, t: 0 });
     }
     if (!reduceMotion) fx.shake = 0.12;
-    SFX.pop(); setTimeout(() => SFX.grade(rank), 120);
+    SFX.pop(); setTimeout(() => { SFX.grade(rank); SFX.cash(); }, 120);
     phase = 'shucked'; o.t0 = T;
     updateHud();
+  }
+
+  function endShift(finished) {
+    const v = G.venue;
+    const bonus = finished ? Math.round(Math.max(0, G.clock) * v.pay * C.timeBonusRate) : 0;
+    const sub = G.pay + G.tips + bonus;
+    const jar = Math.round(sub * (cashMult() - 1));
+    const total = sub + jar;
+    SAVE.cash += total; SAVE.shifts += 1; SAVE.oysters += G.done; SAVE.cuts += G.cuts;
+    const best = total > SAVE.bestShift; if (best) SAVE.bestShift = total;
+    writeSave();
+    state = 'result'; phase = 'idle'; hurt = null; paused = false; pointer.tracing = false;
+    finished ? SFX.orderUp() : SFX.late();
+
+    const avg = G.done ? G.accSum / G.done : 0;
+    let rank = C.grades.findIndex((g) => avg >= g.minAccuracy); if (rank < 0) rank = C.grades.length - 1;
+    const row = (label, val, cls = '') => `<div class="line ${cls}"><span>${label}</span><b>${val}</b></div>`;
+    const next = cheapestUpgrade();
+    $('resultTitle').textContent = finished ? 'Order up!' : 'Out of time!';
+    $('resultTag').textContent = finished ? 'Paid in full' : 'Partial pay';
+    $('resultBody').innerHTML = `
+      <p class="sub">${G.done} of ${G.need} oysters served at ${v.name}</p>
+      <div class="receipt">
+        ${row(`Oysters (${G.done})`, money(G.pay))}
+        ${row(`Speedy tips (${G.fast})`, money(G.tips))}
+        ${row(finished ? 'Time left bonus' : 'Time left bonus (late)', money(bonus))}
+        ${jar ? row(`${tier('jar').name}`, money(jar)) : ''}
+        ${row('Total', money(total), 'total')}
+      </div>
+      <p class="fine">${G.done ? `Average work: ${C.grades[rank].name.replace(/!$/, '').toLowerCase()}.` : ''}
+        ${G.cuts ? ` Cut yourself ${G.cuts === 1 ? 'once' : G.cuts + ' times'}.` : ' No cuts!'}
+        ${best ? ' New best shift!' : ''}</p>
+      <div class="cashline"><span>Cash</span><strong>${money(SAVE.cash)}</strong></div>
+      ${next && SAVE.cash >= next.cost ? `<p class="nudge">You can afford the ${next.name} now.</p>` : ''}`;
+    showScreen('result');
   }
 
   // ---------- Oops ----------
   function cutHand() {
     pointer.tracing = false;
-    hurt = { phase: 'ouch', t: 0, taps: 0 };
+    G.cuts += 1;
+    hurt = { t: 0, taps: 0 };
     fx.ouch = { x: armTip.x, y: armTip.y, t: 0 };
     for (let i = 0; i < 10; i++) {
       const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2, v = L.D * (0.6 + Math.random());
@@ -315,18 +381,15 @@
     SFX.ouch();
     if (navigator.vibrate) { try { navigator.vibrate(120); } catch (e) { /* ignore */ } }
   }
-
   function tapNapkin() {
     if (!hurt) return;
-    hurt.phase = 'napkin';
     hurt.taps += 1; fx.wipe = 0.25; SFX.wipe();
-    if (hurt.taps >= C.napkinTaps) {
+    if (hurt.taps >= napkinTaps()) {
       G.bandages.push({ dx: (Math.random() - 0.5) * 40, dy: (Math.random() - 0.5) * 30, rot: -0.6 + Math.random() * 1.2 });
       hurt = null; fx.drops = []; SFX.bandage();
       fx.popups.push({ text: 'Back to work!', sub: '', x: L.cx, y: L.cy - L.D * 0.1, t: 0, big: true });
     }
   }
-
   function inNapkin(x, y) {
     const n = L.napkin, pad = 14;
     return x >= n.x - pad && x <= n.x + n.w + pad && y >= n.y - pad && y <= n.y + n.h + pad;
@@ -359,10 +422,7 @@
       for (const ce of evs) { const q = localPos(ce); traceTo(q.x, q.y); }
     }
   });
-  function endPointer(e) {
-    if (pointer.id !== e.pointerId) return;
-    pointer.id = null; pointer.down = false; pointer.tracing = false;
-  }
+  function endPointer(e) { if (pointer.id !== e.pointerId) return; pointer.id = null; pointer.down = false; pointer.tracing = false; }
   canvas.addEventListener('pointerup', endPointer);
   canvas.addEventListener('pointercancel', endPointer);
   canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') pointer.hover = false; });
@@ -370,23 +430,144 @@
   // ---------- Screens ----------
   function showScreen(which) {
     els.title.hidden = which !== 'title';
-    els.intro.hidden = which !== 'intro';
-    els.over.hidden = which !== 'over';
+    els.hub.hidden = which !== 'hub';
+    els.result.hidden = which !== 'result';
     els.pause.hidden = which !== 'pause';
-    const focusBtn = { title: 'btnStart', intro: 'btnGo', over: 'btnAgain', pause: 'btnResume' }[which];
+    els.btnPause.hidden = state !== 'play';
+    document.body.classList.toggle('on-shift', state === 'play');
+    const focusBtn = { title: 'btnStart', result: 'btnBackToShack', pause: 'btnResume' }[which];
     if (focusBtn) setTimeout(() => { const b = $(focusBtn); if (b) b.focus({ preventScroll: true }); }, 30);
   }
 
-  function gameOver() {
-    state = 'over'; phase = 'idle'; hurt = null; SFX.late();
-    const best = Math.max(getBest(), G.score); setBest(best);
-    els.overTitle.textContent = 'Order late!';
-    els.overScore.textContent = G.score.toLocaleString();
-    els.overBest.textContent = best.toLocaleString();
-    const left = G.need - G.done;
-    els.overDetail.textContent = `${G.shuckedTotal} ${G.shuckedTotal === 1 ? 'oyster' : 'oysters'} shucked. Order #${G.order} came up ${left} short.`;
-    showScreen('over');
+  function refreshTitle() {
+    const has = SAVE.shifts > 0;
+    els.btnStart.textContent = has ? 'Back to work' : 'Open the shack';
+    els.titleSave.textContent = has ? `${venue().name} · ${money(SAVE.cash)} · ${SAVE.shifts} shift${SAVE.shifts === 1 ? '' : 's'} worked` : '';
   }
+
+  function cheapestUpgrade() {
+    let best = null;
+    C.gear.forEach((g) => {
+      const i = SAVE.owned[g.id] || 0; const t = g.tiers[i + 1];
+      if (t && (!best || t.cost < best.cost)) best = t;
+    });
+    const nv = C.venues.find((v) => !SAVE.unlocked.includes(v.id));
+    if (nv && (!best || nv.cost < best.cost)) best = { name: nv.name, cost: nv.cost };
+    return best;
+  }
+
+  function riskLabel() {
+    const m = cutMult();
+    return m > 0.8 ? ['High', 'hi'] : m > 0.45 ? ['Medium', 'mid'] : m > 0.2 ? ['Low', 'lo'] : ['Tiny', 'lo'];
+  }
+
+  function openHub(tab) {
+    state = 'hub'; phase = 'idle'; cur = null; hurt = null;
+    if (tab) hubTab = tab;
+    resetArmed = false;
+    renderHub();
+    showScreen('hub');
+  }
+
+  function renderHub() {
+    const v = venue();
+    els.hubCash.textContent = money(SAVE.cash);
+    els.hubVenue.textContent = v.name;
+    els.hubShift.textContent = `Shift #${SAVE.shifts + 1}`;
+    document.querySelectorAll('#screenHub [data-tab]').forEach((b) => {
+      const on = b.dataset.tab === hubTab; b.setAttribute('aria-selected', String(on)); b.classList.toggle('on', on);
+    });
+    let h = '';
+    if (hubTab === 'work') {
+      const sizes = v.orderMin === v.orderMax ? `${v.orderMin}` : `${v.orderMin} to ${v.orderMax}`;
+      const [risk, rc] = riskLabel();
+      h = `
+        <h2 class="venue-name">${v.name}</h2>
+        <p class="fine">${v.blurb}</p>
+        <div class="specs">
+          <div><span>Order</span><b>${sizes} oysters</b></div>
+          <div><span>Clock</span><b>${shiftClock(v.orderMin, v)}s${v.orderMin !== v.orderMax ? '+' : ''}</b></div>
+          <div><span>Pay</span><b>${money(v.pay)} each</b></div>
+          <div><span>Cut risk</span><b class="risk ${rc}">${risk}</b></div>
+        </div>
+        <button class="btn" type="button" data-act="shift">Start shift</button>
+        <p class="fine stats">${SAVE.oysters.toLocaleString()} oysters shucked · best shift ${money(SAVE.bestShift)}</p>
+        <button class="linkbtn" type="button" data-act="reset">${resetArmed ? 'Tap again to wipe your save' : 'Start over'}</button>`;
+    } else if (hubTab === 'gear') {
+      h = C.gear.map((g) => {
+        const i = SAVE.owned[g.id] || 0, curT = g.tiers[i], next = g.tiers[i + 1];
+        const pic = g.id === 'knife' && KNIFE_URL[(next || curT).look] ? `<img class="knife-pic" src="${KNIFE_URL[(next || curT).look]}" alt="">` : '';
+        const pips = g.tiers.map((_, k) => `<i class="${k <= i ? 'on' : ''}"></i>`).join('');
+        const right = next
+          ? `<button class="buy" type="button" data-act="buy" data-id="${g.id}" ${SAVE.cash < next.cost ? 'data-short="1"' : ''}>${money(next.cost)}</button>`
+          : `<span class="maxed">Maxed</span>`;
+        return `<div class="item">
+          ${pic}
+          <div class="item-txt">
+            <div class="item-head"><span class="cat">${g.name}</span><span class="pips">${pips}</span></div>
+            <b>${next ? next.name : curT.name}</b>
+            <p>${next ? next.desc : curT.desc}</p>
+            <p class="have">${next ? `You have: ${curT.name}` : 'Top of the line'}</p>
+          </div>
+          ${right}
+        </div>`;
+      }).join('');
+    } else {
+      h = C.venues.map((vv, k) => {
+        const open = SAVE.unlocked.includes(vv.id), here = vv.id === SAVE.venue;
+        const prevOpen = k === 0 || SAVE.unlocked.includes(C.venues[k - 1].id);
+        let right;
+        if (here) right = `<span class="here">Here now</span>`;
+        else if (open) right = `<button class="buy go" type="button" data-act="move" data-id="${vv.id}">Work here</button>`;
+        else if (prevOpen) right = `<button class="buy" type="button" data-act="unlock" data-id="${vv.id}" ${SAVE.cash < vv.cost ? 'data-short="1"' : ''}>${money(vv.cost)}</button>`;
+        else right = `<span class="locked">Locked</span>`;
+        const sizes = vv.orderMin === vv.orderMax ? `${vv.orderMin}` : `${vv.orderMin}–${vv.orderMax}`;
+        return `<div class="item place ${here ? 'is-here' : ''} ${!open && !prevOpen ? 'dim' : ''}">
+          <div class="place-no">${k + 1}</div>
+          <div class="item-txt">
+            <b>${vv.name}</b>
+            <p>${sizes} oysters · ${money(vv.pay)} each · ${vv.secsPerOyster}s per oyster</p>
+          </div>
+          ${right}
+        </div>`;
+      }).join('');
+    }
+    els.hubBody.innerHTML = h;
+  }
+
+  function flash(msg, bad) {
+    const t = $('toast'); t.textContent = msg; t.dataset.bad = bad ? '1' : '0'; t.hidden = false;
+    t.classList.remove('pop'); void t.offsetWidth; t.classList.add('pop');
+    clearTimeout(flash.tm); flash.tm = setTimeout(() => { t.hidden = true; }, 1800);
+  }
+
+  els.hub.addEventListener('click', (e) => {
+    const tabBtn = e.target.closest('[data-tab]');
+    if (tabBtn) { hubTab = tabBtn.dataset.tab; resetArmed = false; renderHub(); return; }
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    audio();
+    const act = b.dataset.act, id = b.dataset.id;
+    if (act === 'shift') { startShift(); return; }
+    if (act === 'reset') {
+      if (!resetArmed) { resetArmed = true; renderHub(); return; }
+      try { localStorage.removeItem(SAVE_KEY); } catch (err) { /* ignore */ }
+      SAVE = freshSave(); resetArmed = false; hubTab = 'work'; renderHub(); flash('Fresh start at the Beach Shack');
+      return;
+    }
+    if (act === 'buy') {
+      const g = gearDef(id), i = SAVE.owned[id] || 0, next = g.tiers[i + 1]; if (!next) return;
+      if (SAVE.cash < next.cost) { SFX.nope(); flash(`Need ${money(next.cost - SAVE.cash)} more`, true); return; }
+      SAVE.cash -= next.cost; SAVE.owned[id] = i + 1; writeSave(); SFX.buy(); flash(`Got the ${next.name}!`);
+      renderHub(); return;
+    }
+    if (act === 'unlock') {
+      const vv = C.venues.find((x) => x.id === id); if (!vv) return;
+      if (SAVE.cash < vv.cost) { SFX.nope(); flash(`Need ${money(vv.cost - SAVE.cash)} more`, true); return; }
+      SAVE.cash -= vv.cost; SAVE.unlocked.push(id); SAVE.venue = id; writeSave(); SFX.buy();
+      flash(`Welcome to ${vv.name}!`); hubTab = 'work'; renderHub(); return;
+    }
+    if (act === 'move') { SAVE.venue = id; writeSave(); SFX.slide(); hubTab = 'work'; renderHub(); }
+  });
 
   function setPaused(p) {
     if (state !== 'play') return;
@@ -394,11 +575,10 @@
     showScreen(p ? 'pause' : null);
   }
 
-  $('btnStart').addEventListener('click', () => { audio(); newGame(); });
-  $('btnGo').addEventListener('click', () => { audio(); beginOrder(); });
-  $('btnAgain').addEventListener('click', () => { audio(); newGame(); });
+  els.btnStart.addEventListener('click', () => { audio(); openHub('work'); });
+  $('btnBackToShack').addEventListener('click', () => { audio(); openHub('work'); });
   $('btnResume').addEventListener('click', () => setPaused(false));
-  $('btnQuit').addEventListener('click', () => { paused = false; state = 'title'; phase = 'idle'; cur = null; hurt = null; refreshTitle(); showScreen('title'); });
+  $('btnWalkOut').addEventListener('click', () => { paused = false; endShift(false); });
   els.btnPause.addEventListener('click', () => setPaused(!paused));
   els.btnMute.addEventListener('click', () => setMuted(!muted));
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play' && !paused) setPaused(true); });
@@ -407,13 +587,11 @@
     if (e.key === 'm') setMuted(!muted);
   });
 
-  function refreshTitle() { const b = getBest(); els.titleBest.textContent = b ? `Best: ${b.toLocaleString()}` : ''; }
-
   function updateHud() {
-    if (!G) { els.order.textContent = '—'; els.count.textContent = '0 / 12'; els.score.textContent = '0'; return; }
-    els.order.textContent = `#${G.order} · ${G.order === 1 ? '1 dozen' : G.order + ' dozen'}`;
-    els.count.textContent = `${G.done} / ${G.need}`;
-    els.score.textContent = G.score.toLocaleString();
+    const v = G ? G.venue : venue();
+    els.venue.textContent = v.name;
+    els.count.textContent = G ? `${G.done} / ${G.need}` : '0 / 12';
+    els.earned.textContent = money(G ? G.pay + G.tips : 0);
   }
   function updateClock() {
     if (!G) return;
@@ -430,10 +608,13 @@
   function update(dt) {
     T += dt;
     if (state === 'play' && !paused) {
-      G.clock -= dt;
-      updateClock();
-      if (G.clock <= 0) { gameOver(); return; }
-
+      if (phase === 'ready') {
+        if (T - readyT >= C.orderUpTime) nextOyster();
+      } else {
+        G.clock -= dt;
+        updateClock();
+        if (G.clock <= 0) { endShift(false); return; }
+      }
       if (phase === 'slideIn') {
         const k = Math.min(1, (T - cur.t0) / C.slideInTime);
         cur.x = W + L.D * 0.6 + (L.cx - (W + L.D * 0.6)) * easeOutBack(k);
@@ -443,23 +624,11 @@
       } else if (phase === 'slideOut') {
         const k = Math.min(1, (T - cur.t0) / C.slideOutTime);
         cur.x = L.cx + (-L.D * 0.7 - L.cx) * easeIn(k);
-        if (k >= 1) {
-          if (G.done >= G.need) {
-            const avg = G.orderAccSum / G.need;
-            let rank = C.grades.findIndex((g) => avg >= g.minAccuracy); if (rank < 0) rank = C.grades.length - 1;
-            const spare = Math.max(0, Math.round(G.clock)), bonus = spare * 10;
-            const gname = C.grades[rank].name.replace(/!$/, '').toLowerCase();
-            G.orderStats = `${gname.charAt(0).toUpperCase() + gname.slice(1)} work with ${spare}s to spare, +${bonus.toLocaleString()} bonus.`;
-            G.score += bonus;
-            SFX.orderUp();
-            startOrderIntro();
-          } else nextOyster();
-        }
+        if (k >= 1) { if (G.done >= G.need) { endShift(true); return; } nextOyster(); }
       }
       if (hurt) hurt.t += dt;
     }
 
-    // effects keep moving even between states
     if (fx.lid) {
       const l = fx.lid; l.t += dt; l.vy += L.D * 9 * dt; l.x += l.vx * dt; l.y += l.vy * dt; l.rot += l.vr * dt;
       if (l.y > H + L.D || l.t > 2) fx.lid = null;
@@ -472,7 +641,6 @@
     fx.shake = Math.max(0, fx.shake - dt);
     fx.wipe = Math.max(0, fx.wipe - dt);
 
-    // Arm target
     let tx, ty;
     const following = (pointer.down || (pointer.hover && pointer.type === 'mouse')) && !hurt && state === 'play' && !paused;
     if (following) { tx = pointer.x; ty = pointer.y; }
@@ -484,14 +652,6 @@
   }
 
   // ---------- Draw ----------
-  function drawOysterImg(key, x, y, flip, rot = 0, scale = 1, alpha = 1) {
-    const im = IMG[key]; if (!im) return;
-    const D = L.D * scale;
-    ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.rotate(rot); if (flip) ctx.scale(-1, 1);
-    ctx.drawImage(im, -D / 2, -D / 2, D, D); ctx.restore();
-  }
-
-  // Shell-shaped drop shadows, made once from each sprite.
   const SIL = {};
   function silhouette(key) {
     if (SIL[key]) return SIL[key];
@@ -508,16 +668,19 @@
     ctx.save(); ctx.globalAlpha = 0.3; ctx.translate(x + D * 0.025, y + D * 0.045); if (o.flip) ctx.scale(-1, 1);
     ctx.drawImage(s, -D / 2, -D / 2, D, D); ctx.restore();
   }
-
+  function drawOysterImg(key, x, y, flip, rot = 0, scale = 1, alpha = 1) {
+    const im = IMG[key]; if (!im) return;
+    const D = L.D * scale;
+    ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.rotate(rot); if (flip) ctx.scale(-1, 1);
+    ctx.drawImage(im, -D / 2, -D / 2, D, D); ctx.restore();
+  }
   function drawGuide(o) {
     const pts = o.pts, n = pts.length, dx = o.x - L.cx;
     ctx.save(); ctx.translate(dx, 0); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    // dashed guide
     ctx.setLineDash([L.D * 0.025, L.D * 0.03]); ctx.lineDashOffset = -T * 40;
     ctx.strokeStyle = 'rgba(255,250,235,0.85)'; ctx.lineWidth = Math.max(2.5, L.D * 0.009);
     ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.closePath(); ctx.stroke();
     ctx.setLineDash([]);
-    // covered = cut line
     const w = Math.max(5, L.D * 0.022);
     for (let pass = 0; pass < 2; pass++) {
       ctx.strokeStyle = pass ? '#ffd23f' : '#3a1d0b'; ctx.lineWidth = pass ? w : w + 4;
@@ -530,7 +693,6 @@
     }
     ctx.restore();
   }
-
   function drawTrail(o) {
     if (!o.trail.length) return;
     ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -542,10 +704,8 @@
     }
     ctx.restore();
   }
-
   function drawHint(o) {
-    // a glowing dot that runs the outline until the player starts
-    if (o.n > 0 || G.shuckedTotal > 1) return;
+    if (o.n > 0 || SAVE.oysters + G.done > 1) return;
     const n = o.pts.length, f = (T * 0.35) % 1, i = Math.floor(f * n), p = o.pts[i];
     ctx.save();
     ctx.fillStyle = 'rgba(255,210,63,0.9)'; ctx.strokeStyle = '#3a1d0b'; ctx.lineWidth = 3;
@@ -553,7 +713,6 @@
     label('Trace around the shell!', L.cx, L.cy - L.D * 0.58, L.D * 0.085, '#fff3d6');
     ctx.restore();
   }
-
   function label(text, x, y, size, fill, rot = 0, maxW = W * 0.92) {
     ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
     ctx.font = `${size}px "Lilita One", "Arial Black", system-ui, sans-serif`;
@@ -563,7 +722,6 @@
     ctx.fillStyle = fill; ctx.fillText(text, 0, 0);
     ctx.restore();
   }
-
   function drawStamp() {
     const s = fx.stamp; if (!s) return;
     let sc;
@@ -571,41 +729,41 @@
     else if (s.t < 0.3) sc = 0.88 + 0.12 * ((s.t - 0.16) / 0.14);
     else sc = 1;
     const alpha = s.t > 0.8 ? 1 - (s.t - 0.8) / 0.2 : 1;
-    const size = L.D * 0.18;
     ctx.save(); ctx.globalAlpha = Math.max(0, alpha);
     ctx.translate(L.cx, L.cy - L.D * 0.05); ctx.scale(sc, sc);
-    if (s.rank <= 1) { // burst rays for the top grades
+    if (s.rank <= 1) {
       ctx.save(); ctx.rotate(T * 1.5); ctx.fillStyle = 'rgba(255,230,120,0.35)';
       for (let i = 0; i < 12; i++) { ctx.rotate(Math.PI / 6); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(L.D * 0.08, -L.D * 0.7); ctx.lineTo(-L.D * 0.08, -L.D * 0.7); ctx.fill(); }
       ctx.restore();
     }
-    label(s.text, 0, 0, size, s.color, -0.08, W * 0.94);
+    label(s.text, 0, 0, L.D * 0.18, s.color, -0.08, W * 0.94);
     ctx.restore();
   }
-
+  function drawOrderUp() {
+    const k = Math.min(1, (T - readyT) / 0.25), sc = 0.5 + 0.5 * easeOutBack(k);
+    ctx.save(); ctx.translate(L.cx, L.cy - L.D * 0.08); ctx.scale(sc, sc);
+    label('ORDER UP!', 0, 0, L.D * 0.2, '#ffd23f', -0.06);
+    label(`${G.need} oysters · ${G.clockMax}s`, 0, L.D * 0.2, L.D * 0.085, '#fff3d6');
+    ctx.restore();
+  }
   function drawPopups() {
     fx.popups.forEach((p) => {
       const a = p.t > 0.7 ? 1 - (p.t - 0.7) / 0.4 : 1, y = p.y - p.t * L.D * 0.25;
       ctx.save(); ctx.globalAlpha = Math.max(0, a);
-      label(p.text, p.x, y, p.big ? L.D * 0.12 : L.D * 0.1, p.big ? '#8df27a' : '#fff3d6');
+      label(p.text, p.x, y, p.big ? L.D * 0.12 : L.D * 0.11, p.big ? '#8df27a' : p.money ? '#8df27a' : '#fff3d6');
       if (p.sub) label(p.sub, p.x, y + L.D * 0.09, L.D * 0.055, '#ffd23f');
       ctx.restore();
     });
   }
-
   function drawArm() {
-    const hand = IMG.hand, cuff = IMG.cuff; if (!hand || !cuff) return;
-    const s = L.armScale, Cs = L.cuffOpen;
-    const tip = armTip;
+    const knifeLook = tier('knife').look || 'steel';
+    const hand = KNIFE[knifeLook] || IMG.hand, cuff = IMG.cuff; if (!hand || !cuff) return;
+    const s = L.armScale, Cs = L.cuffOpen, tip = armTip;
     const v0x = ARM.hand.tip[0] - ARM.hand.wrist[0], v0y = ARM.hand.tip[1] - ARM.hand.wrist[1];
-    const ang0 = Math.atan2(v0y, v0x);
-    let ang1 = Math.atan2(tip.y - Cs.y, tip.x - Cs.x);
-    const rot = ang1 - ang0;
+    const rot = Math.atan2(tip.y - Cs.y, tip.x - Cs.x) - Math.atan2(v0y, v0x);
     const cr = Math.cos(rot), sr = Math.sin(rot);
     const wx = (ARM.hand.wrist[0] - ARM.hand.tip[0]) * s, wy = (ARM.hand.wrist[1] - ARM.hand.tip[1]) * s;
     const Ws = { x: tip.x + wx * cr - wy * sr, y: tip.y + wx * sr + wy * cr };
-
-    // rubber-hose forearm
     const mx = (Cs.x + Ws.x) / 2, my = (Cs.y + Ws.y) / 2;
     const len = Math.hypot(Ws.x - Cs.x, Ws.y - Cs.y);
     const nx = -(Ws.y - Cs.y) / (len || 1), ny = (Ws.x - Cs.x) / (len || 1);
@@ -619,23 +777,17 @@
     ctx.save(); ctx.translate(-nx * th * 0.18, -ny * th * 0.18);
     hose(); ctx.strokeStyle = 'rgba(255,190,130,0.45)'; ctx.lineWidth = th * 0.25; ctx.stroke(); ctx.restore();
     ctx.restore();
-
-    // cuff
     ctx.drawImage(cuff, L.cuff.x, L.cuff.y, cuff.width * L.cuff.s, cuff.height * L.cuff.s);
-
-    // hand + knife, tip pinned to the finger
     ctx.save(); ctx.translate(tip.x, tip.y); ctx.rotate(rot); ctx.scale(s, s);
     ctx.drawImage(hand, -ARM.hand.tip[0], -ARM.hand.tip[1]);
-    // bandages
     const gx = ARM.hand.glove[0] - ARM.hand.tip[0], gy = ARM.hand.glove[1] - ARM.hand.tip[1];
-    G && G.bandages.forEach((b) => drawBandage(gx + b.dx, gy + b.dy, b.rot));
-    if (hurt) { // cartoon boo-boo
+    if (G && state === 'play') G.bandages.forEach((b) => drawBandage(gx + b.dx, gy + b.dy, b.rot));
+    if (hurt) {
       ctx.fillStyle = '#e8322a'; ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.arc(gx - 10, gy - 6, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
     ctx.restore();
   }
-
   function drawBandage(x, y, rot) {
     ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
     ctx.fillStyle = '#e9b98c'; ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 4;
@@ -646,7 +798,6 @@
     ctx.restore();
   }
   function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
-
   function drawNapkin() {
     const n = L.napkin;
     const glow = hurt ? 0.5 + 0.5 * Math.sin(T * 9) : 0;
@@ -664,11 +815,10 @@
     }
     ctx.restore();
     if (hurt) {
-      const left = C.napkinTaps - hurt.taps;
+      const left = napkinTaps() - hurt.taps;
       label(`TAP ×${left}`, n.x + n.w / 2, n.y - 22, Math.max(20, L.D * 0.07), '#ffd23f', 0, W * 0.4);
     }
   }
-
   function drawHurt() {
     fx.drops.forEach((d) => {
       ctx.save(); ctx.fillStyle = '#e8322a'; ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 2;
@@ -676,19 +826,24 @@
     });
     if (fx.ouch) {
       const o = fx.ouch, k = Math.min(1, o.t / 0.15), sc = 0.4 + k * 0.7 + Math.sin(o.t * 30) * 0.03 * (1 - k);
-      ctx.save(); ctx.translate(Math.min(W * 0.62, Math.max(W * 0.38, o.x)), Math.max(L.top + L.D * 0.18, o.y - L.D * 0.18)); ctx.scale(sc, sc);
-      // starburst
+      const ox = Math.min(W * 0.62, Math.max(W * 0.38, o.x)), oy = Math.max(L.top + L.D * 0.18, o.y - L.D * 0.18);
+      ctx.save(); ctx.translate(ox, oy); ctx.scale(sc, sc);
       ctx.fillStyle = '#fff3d6'; ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 5;
       ctx.beginPath();
       for (let i = 0; i < 24; i++) { const r = i % 2 ? L.D * 0.2 : L.D * 0.33, a = (i / 24) * Math.PI * 2; ctx.lineTo(Math.cos(a) * r * 1.25, Math.sin(a) * r * 0.8); }
       ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.restore();
-      ctx.save(); ctx.translate(Math.min(W * 0.62, Math.max(W * 0.38, o.x)), Math.max(L.top + L.D * 0.18, o.y - L.D * 0.18)); ctx.scale(sc, sc);
       label('OUCH!', 0, 0, L.D * 0.16, '#e8322a', -0.1);
       ctx.restore();
     }
-    if (hurt && hurt.t > 0.7) {
-      label('Grab the napkin!', L.cx, L.cy - L.D * 0.58, L.D * 0.08, '#fff3d6');
+    if (hurt && hurt.t > 0.7) label('Grab the napkin!', L.cx, L.cy - L.D * 0.58, L.D * 0.08, '#fff3d6');
+  }
+  function drawCounter() {
+    const v = (G && state === 'play') ? G.venue : venue();
+    const bg = IMG['bg_' + v.id] || IMG.counter;
+    if (bg) ctx.drawImage(bg, L.bg.ox, L.bg.oy, BG.w * L.bg.s, BG.h * L.bg.s);
+    else { ctx.fillStyle = '#7b8a96'; ctx.fillRect(0, 0, W, H); }
+    if (v.tint && !IMG['bg_' + v.id]) {
+      ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = v.tint; ctx.fillRect(0, 0, W, H); ctx.restore();
     }
   }
 
@@ -697,28 +852,22 @@
     ctx.clearRect(0, 0, W, H);
     ctx.save();
     if (fx.shake > 0) ctx.translate((Math.random() - 0.5) * 14 * fx.shake * 3, (Math.random() - 0.5) * 14 * fx.shake * 3);
-
-    if (IMG.counter) ctx.drawImage(IMG.counter, L.bg.ox, L.bg.oy, BG.w * L.bg.s, BG.h * L.bg.s);
-    else { ctx.fillStyle = '#7b8a96'; ctx.fillRect(0, 0, W, H); }
-
+    drawCounter();
     drawNapkin();
-
     if (state === 'play' && cur) {
       drawShadow(cur, cur.x, L.cy);
       if (phase === 'slideIn' || phase === 'trace') {
         drawOysterImg(cur.shape + '_top', cur.x, L.cy, cur.flip);
         if (phase === 'trace') { drawGuide(cur); drawTrail(cur); drawHint(cur); }
-      } else {
-        drawOysterImg(cur.shape + '_bottom', cur.x, L.cy, cur.flip);
-      }
+      } else drawOysterImg(cur.shape + '_bottom', cur.x, L.cy, cur.flip);
     }
     fx.splash.forEach((s) => {
       ctx.save(); ctx.globalAlpha = 1 - s.t / 0.8; ctx.fillStyle = '#d8eef6'; ctx.strokeStyle = 'rgba(40,70,90,0.6)'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
     });
     if (fx.lid) drawOysterImg(fx.lid.shape + '_top', fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5);
-
     drawArm();
+    if (state === 'play' && phase === 'ready' && !paused) drawOrderUp();
     drawStamp();
     drawPopups();
     drawHurt();
@@ -734,13 +883,15 @@
   }
 
   // Read-only peek for debugging in the console.
-  window.__shuck = { get oyster() { return cur && { shape: cur.shape, flip: cur.flip, pts: cur.pts, phase }; }, get run() { return G; } };
+  window.__shuck = { get oyster() { return cur && { shape: cur.shape, flip: cur.flip, pts: cur.pts, phase }; },
+                     get shift() { return G; }, get save() { return SAVE; } };
 
   window.addEventListener('resize', layout);
   if (window.visualViewport) window.visualViewport.addEventListener('resize', layout);
 
   const fontReady = (document.fonts && document.fonts.load) ? document.fonts.load('40px "Lilita One"').catch(() => {}) : Promise.resolve();
   Promise.all([...assetJobs, fontReady]).then(() => {
+    makeKnives();
     document.body.classList.add('ready');
     layout();
     armTip = { x: L.rest.x, y: L.rest.y };
