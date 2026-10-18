@@ -1,6 +1,6 @@
 # Shuck Shack
 
-Trace around each oyster to pop its top shell. Every shift is one order on the clock. Neat, fast shucking earns cash and speedy tips. Spend it on better knives, gloves, first aid, a bigger ice bin and a tip jar, then save up to move from the Beach Shack to the Boardwalk, Pier 9, Downtown and finally The Pearl Palace. Progress saves in the browser.
+Trace around each oyster to pop its top shell. Every shift is one order on the clock. Neat, fast shucking earns cash and speedy tips. Spend it on better knives, gloves, first aid, a bigger ice bin and a tip jar, then earn a 5-star reputation and save up to move from the Beach Shack to the Boardwalk, Pier 9, Downtown and finally The Pearl Palace. Cheap knives wobble and drag behind your finger; better ones get smooth and fast. Wander off the line and you can cut yourself. Keep working while bleeding and blood can drip into the oysters, which costs money; cut yourself again before bandaging and it takes more napkin taps. Progress saves in the browser.
 
 ## Drop into Monster Pizza
 Copy this folder into the repo (for example `games/shuck-shack/`) and link the arcade cabinet to `games/shuck-shack/index.html`. To show a "Back to Monster Pizza" link on the title and game-over tickets, set `arcadeUrl` in `config.js` (for example `'../../'`).

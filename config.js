@@ -31,33 +31,41 @@ window.SHUCK_CONFIG = {
   //   time:  multiplies the shift clock
   //   cash:  multiplies everything you earn in a shift
   //   look:  knife color (rust, steel, blue, gold)
+  //   wobble: how much the knife shakes (fraction of oyster size)
+  //   lag:   how far the knife drags behind your finger (seconds)
+  //   grip:  how forgiving the trace line is (multiplies traceTolerance)
+  //   needs: a restaurant you must have opened before you can buy this
   gear: [
     { id: 'knife', name: 'Knife', tiers: [
-      { name: 'Rusty Knife',      cost: 0,    cut: 1.0,  look: 'rust',  desc: 'Wobbly and dull. Slips a lot.' },
-      { name: 'Steel Shucker',    cost: 60,   cut: 0.7,  look: 'steel', desc: 'Cuts 30% less often.' },
-      { name: 'Pro Boston Knife', cost: 260,  cut: 0.45, look: 'blue',  desc: 'Cuts about half as often.' },
-      { name: 'Golden Shucker',   cost: 1500, cut: 0.25, look: 'gold',  desc: 'Shiny. Hardly ever slips.' },
+      { name: 'Rusty Knife',      cost: 0,    cut: 1.0,  look: 'rust',  wobble: 0.035, lag: 0.12,  grip: 0.8,
+        desc: 'Wobbly, dull and slow. Slips a lot.' },
+      { name: 'Steel Shucker',    cost: 60,   cut: 0.7,  look: 'steel', wobble: 0.02,  lag: 0.07,  grip: 0.92,
+        desc: 'Steadier and quicker. Cuts 30% less often.' },
+      { name: 'Pro Boston Knife', cost: 260,  cut: 0.45, look: 'blue',  wobble: 0.009, lag: 0.035, grip: 1.05, needs: 'boardwalk',
+        desc: 'Smooth and fast. Cuts about half as often.' },
+      { name: 'Golden Shucker',   cost: 1500, cut: 0.25, look: 'gold',  wobble: 0.002, lag: 0.01,  grip: 1.15, needs: 'pier',
+        desc: 'Glides like butter. Hardly ever slips.' },
     ] },
     { id: 'glove', name: 'Glove', tiers: [
       { name: 'Cotton Glove',     cost: 0,    cut: 1.0,  desc: 'Better than nothing. Barely.' },
       { name: 'Rubber Glove',     cost: 90,   cut: 0.75, desc: 'Cuts 25% less often.' },
-      { name: 'Chainmail Glove',  cost: 450,  cut: 0.45, desc: 'Real shuckers wear these. Cuts about half as often.' },
+      { name: 'Chainmail Glove',  cost: 450,  cut: 0.45, needs: 'boardwalk', desc: 'Real shuckers wear these. Cuts about half as often.' },
     ] },
     { id: 'aid', name: 'First aid', tiers: [
-      { name: 'Paper Napkin',     cost: 0,    taps: 4, desc: '4 taps to clean up a cut.' },
-      { name: 'Bandage Box',      cost: 50,   taps: 3, desc: '3 taps to clean up a cut.' },
-      { name: 'First-Aid Kit',    cost: 180,  taps: 2, desc: '2 taps to clean up a cut.' },
-      { name: 'Super Kit',        cost: 600,  taps: 1, desc: 'One tap and you are back to work.' },
+      { name: 'Paper Napkin',     cost: 0,    taps: 4, desc: '4 taps per cut to bandage up.' },
+      { name: 'Bandage Box',      cost: 50,   taps: 3, desc: '3 taps per cut to bandage up.' },
+      { name: 'First-Aid Kit',    cost: 180,  taps: 2, needs: 'boardwalk', desc: '2 taps per cut to bandage up.' },
+      { name: 'Super Kit',        cost: 600,  taps: 1, needs: 'pier', desc: 'One tap per cut and you are back to work.' },
     ] },
     { id: 'ice', name: 'Ice bin', tiers: [
       { name: 'Small Cooler',     cost: 0,    time: 1.0,  desc: 'Normal shift clock.' },
       { name: 'Big Ice Bin',      cost: 140,  time: 1.15, desc: '15% more time every shift.' },
-      { name: 'Walk-in Cooler',   cost: 700,  time: 1.3,  desc: '30% more time every shift.' },
+      { name: 'Walk-in Cooler',   cost: 700,  time: 1.3,  needs: 'pier', desc: '30% more time every shift.' },
     ] },
     { id: 'jar', name: 'Tip jar', tiers: [
       { name: 'Paper Cup',        cost: 0,    cash: 1.0,  desc: 'No extra tips.' },
       { name: 'Glass Jar',        cost: 120,  cash: 1.2,  desc: '20% more cash every shift.' },
-      { name: 'Giant Fishbowl',   cost: 900,  cash: 1.5,  desc: '50% more cash every shift.' },
+      { name: 'Giant Fishbowl',   cost: 900,  cash: 1.5,  needs: 'pier', desc: '50% more cash every shift.' },
     ] },
   ],
 
@@ -83,11 +91,21 @@ window.SHUCK_CONFIG = {
     { name: 'TERRIBLE',       minAccuracy: 0,    color: '#ff6b5b' },
   ],
 
+  // ---------------- Reputation ----------------
+  starsToUnlock: 5,            // reputation stars needed at a place before the next one can be bought
+  starUpAt: 4,                 // a shift rated this many stars or more adds a reputation star
+  starDownAt: 2,               // a shift rated this or less takes one away
+
   // ---------------- Oops! ----------------
-  safeOysters: 2,              // no cuts on the first oysters of each shift
-  randomCutChance: 0.1,        // chance per oyster of a random slip (before knife and glove)
-  slipCutChance: 0.3,          // chance when your finger wanders far off the line
-  slipDistance: 3.2,           // "far off" = this many tolerances away
+  safeOysters: 1,              // no cuts on the first oysters of each shift
+  randomCutChance: 0.05,       // chance per oyster of a random slip (before knife and glove)
+  slipCutChance: 0.55,         // chance each time the knife wanders far off the line
+  slipDistance: 2.4,           // "far off" = this many tolerances away
+  slipCooldown: 0.6,           // seconds between slip checks
+  cutStun: 0.6,                // seconds you can't shuck after a cut
+  woundWobble: 0.012,          // extra knife shake per open cut
+  dripEvery: 1.1,              // seconds between blood drips with one open cut (faster with more)
+  bloodPenalty: 1.0,           // a bloody oyster pays nothing and costs this many times its pay
 
   // Animation timings (seconds)
   orderUpTime: 1.4,
