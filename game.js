@@ -183,7 +183,7 @@
     L.top = top;
     L.D = Math.min(W * 0.8, availH * 0.7, 460);
     L.cx = W / 2;
-    L.cy = top + availH * 0.43;
+    L.cy = top + availH * 0.5;
     L.tol = Math.max(C.minTolerancePx, L.D * C.traceTolerance);
 
     const s = Math.max(W / BG.w, H / BG.h, (L.D * 1.2) / BG.boardH, (L.D * 1.2) / BG.boardW);
