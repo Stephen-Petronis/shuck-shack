@@ -183,7 +183,7 @@
     L.top = top;
     L.D = Math.min(W * 0.8, availH * 0.7, 460);
     L.cx = W / 2;
-    L.cy = top + availH * 0.47;
+    L.cy = top + availH * 0.43;
     L.tol = Math.max(C.minTolerancePx, L.D * C.traceTolerance);
 
     const s = Math.max(W / BG.w, H / BG.h, (L.D * 1.2) / BG.boardH, (L.D * 1.2) / BG.boardW);
@@ -299,11 +299,13 @@
     }
     o.trail.push({ x, y, t: T }); if (o.trail.length > 60) o.trail.shift();
     const progress = o.nCovered / o.pts.length;
-    if (G.done >= C.safeOysters && d > tol * C.slipDistance && T - G.lastSlip > C.slipCooldown) {
+    if (d < tol * 1.2) o.engaged = true;
+    const canCut = G.done >= C.safeOysters && o.engaged && T >= (G.graceUntil || 0);
+    if (canCut && d > tol * C.slipDistance && T - G.lastSlip > C.slipCooldown) {
       G.lastSlip = T;
       if (Math.random() < C.slipCutChance * cutMult()) { cutHand(); return; }
     }
-    if (o.cutAt !== null && progress >= o.cutAt) { o.cutAt = null; cutHand(); return; }
+    if (o.cutAt !== null && progress >= o.cutAt && canCut) { o.cutAt = null; cutHand(); return; }
     if (progress >= C.coverageToFinish) finishOyster();
   }
   function accuracyOf(o) {
@@ -413,11 +415,12 @@
     if (G.tapsDone >= tapsNeeded()) {
       for (let k = 0; k < G.wounds; k++) G.bandages.push({ dx: (Math.random() - 0.5) * 50, dy: (Math.random() - 0.5) * 36, rot: -0.6 + Math.random() * 1.2 });
       G.wounds = 0; G.tapsDone = 0; hurt = null; fx.drops = []; SFX.bandage();
+      G.graceUntil = T + 1.5;   // a moment to get back on the line before you can slip again
       fx.popups.push({ text: 'Back to work!', sub: '', x: L.cx, y: L.cy - L.D * 0.1, t: 0, big: true });
     }
   }
-  function inNapkin(x, y) {
-    const n = L.napkin, pad = 14;
+  function inNapkin(x, y, pad = 14) {
+    const n = L.napkin;
     return x >= n.x - pad && x <= n.x + n.w + pad && y >= n.y - pad && y <= n.y + n.h + pad;
   }
 
@@ -430,10 +433,11 @@
     pointer.id = e.pointerId; pointer.down = true; pointer.type = e.pointerType; pointer.x = p.x; pointer.y = p.y;
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     if (state !== 'play' || paused) return;
-    if (G.wounds && inNapkin(p.x, p.y)) { tapNapkin(); e.preventDefault(); return; }
+    if (G.wounds && inNapkin(p.x, p.y, 44)) { tapNapkin(); e.preventDefault(); return; }
     if (G.stun > 0) return;
     if (phase === 'trace') {
       pointer.tracing = true;
+      cur.engaged = false;   // no slips until the blade has actually reached the line
       // the blade starts where the arm already is and has to catch up to your finger
       if (Math.hypot(armTip.x - p.x, armTip.y - p.y) > L.D * 0.5) { knife.x = p.x; knife.y = p.y; }
       else { knife.x = armTip.x; knife.y = armTip.y; }
@@ -753,6 +757,41 @@
     armTip.x += (tx - armTip.x) * k; armTip.y += (ty - armTip.y) * k;
   }
 
+  // Googly eye spots on each top shell (sprite pixels in a 360x360 sprite: x, y, radius).
+  const EYES = window.SHUCK_EYES || {
+    round:    [[72.5, 156.3, 15.5], [80.5, 207.3, 15]],
+    teardrop: [[124.1, 169.3, 11], [134, 203.5, 9]],
+    crescent: [[222.1, 266, 14.5], [262.6, 226.4, 14.5]],
+    pointy:   [[230, 216.9, 13], [244.7, 252.1, 11.5]],
+  };
+  function drawEyes(shape, x, y, flip, rot = 0, scale = 1, seed = 0) {
+    const eyes = EYES[shape]; if (!eyes) return;
+    const D = L.D * scale, k = D / 360;
+    const look = armTip;
+    const blink = ((T + seed * 1.7) % 4.2) < 0.13;
+    const cr = Math.cos(rot), sr = Math.sin(rot);
+    eyes.forEach(([ex, ey, er]) => {
+      const lx = (ex - 180) * k * (flip ? -1 : 1), ly = (ey - 180) * k;
+      const px = x + lx * cr - ly * sr, py = y + lx * sr + ly * cr;
+      const r = er * k;
+      ctx.save();
+      ctx.fillStyle = '#fbf8ef';
+      ctx.beginPath(); ctx.arc(px, py, r * 0.95, 0, Math.PI * 2); ctx.fill();
+      if (blink) {
+        ctx.fillStyle = '#c9b48d'; ctx.beginPath(); ctx.arc(px, py, r * 0.95, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#1d1712'; ctx.lineWidth = Math.max(1.5, r * 0.18); ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(px - r * 0.7, py); ctx.quadraticCurveTo(px, py + r * 0.35, px + r * 0.7, py); ctx.stroke();
+      } else {
+        const dx = look.x - px, dy = look.y - py, dist = Math.hypot(dx, dy) || 1;
+        const reach = r * 0.42 * Math.min(1, dist / (L.D * 0.25));
+        const qx = px + (dx / dist) * reach, qy = py + (dy / dist) * reach;
+        ctx.fillStyle = '#16100b'; ctx.beginPath(); ctx.arc(qx, qy, r * 0.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.arc(qx - r * 0.17, qy - r * 0.17, r * 0.14, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+    });
+  }
+
   // ---------- Draw ----------
   const SIL = {};
   function silhouette(key) {
@@ -996,6 +1035,7 @@
       drawShadow(cur, cur.x, L.cy);
       if (phase === 'slideIn' || phase === 'trace') {
         drawOysterImg(cur.shape + '_top', cur.x, L.cy, cur.flip);
+        drawEyes(cur.shape, cur.x, L.cy, cur.flip, 0, 1, G.done);
         drawBloodOn(cur);
         if (phase === 'trace') { drawGuide(cur); drawTrail(cur); drawHint(cur); }
       } else { drawOysterImg(cur.shape + '_bottom', cur.x, L.cy, cur.flip); drawBloodOn(cur); }
@@ -1005,7 +1045,10 @@
       ctx.save(); ctx.globalAlpha = 1 - s.t / 0.8; ctx.fillStyle = '#d8eef6'; ctx.strokeStyle = 'rgba(40,70,90,0.6)'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
     });
-    if (fx.lid) drawOysterImg(fx.lid.shape + '_top', fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5);
+    if (fx.lid) {
+      drawOysterImg(fx.lid.shape + '_top', fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5);
+      drawEyes(fx.lid.shape, fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5, 9);
+    }
     drawArm();
     if (state === 'play' && phase === 'ready' && !paused) drawOrderUp();
     drawStamp();
