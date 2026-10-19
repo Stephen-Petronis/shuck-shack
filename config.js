@@ -66,6 +66,10 @@ window.SHUCK_CONFIG = {
       { name: 'Big Ice Bin',      cost: 140,  time: 1.15, desc: '15% more time every shift.' },
       { name: 'Walk-in Cooler',   cost: 700,  time: 1.3,  needs: 'pier', desc: '30% more time every shift.' },
     ] },
+    { id: 'radio', name: 'Radio', tiers: [
+      { name: 'No Radio',    cost: 0,  desc: 'Just the waves.' },
+      { name: 'Beach Radio', cost: 40, desc: 'Three stations of 8-bit beach tunes. Tap the Radio button to switch.' },
+    ] },
     { id: 'jar', name: 'Tip jar', tiers: [
       { name: 'Paper Cup',        cost: 0,    cash: 1.0,  desc: 'No extra tips.' },
       { name: 'Glass Jar',        cost: 120,  cash: 1.2,  desc: '20% more cash every shift.' },
@@ -114,6 +118,37 @@ window.SHUCK_CONFIG = {
   dripEvery: 1.1,              // seconds between blood drips with one open cut (faster with more)
   bloodPenalty: 1.0,           // a bloody oyster pays nothing and costs this many times its pay
 
+  // ---------------- Skills ----------------
+  // Each tree fills from its own kind of play. A full bar lets you learn that tree's next perk.
+  skills: {
+    costs: [80, 200, 400, 700],          // XP for perk 1, 2, 3, 4 in every tree
+    xp: { accPerOyster: 10,              // times accuracy (0..1)
+          spdFast: 8, spdOk: 4, spdSlow: 1,   // per oyster: under par / under 1.5x par / slower
+          bldPerCut: 25, bldPerBloody: 5,
+          lemonPerQuartered: 3 },        // Lemon Toss gives Speed XP
+    levelXp: 120,                        // overall player level: every this much total XP (grows a little each level)
+    trees: [
+      { id: 'acc', name: 'Accuracy', color: '#4fc3e8', how: 'Earn it with clean, close traces.', perks: [
+        { name: 'Sharp Eye',   desc: 'Oysters pop after tracing 85% of the shell.' },
+        { name: 'Steady Hand', desc: 'Your knife shakes half as much.' },
+        { name: 'Eagle Eye',   desc: 'Oysters pop after tracing just 75%.' },
+        { name: 'Bullseye',    desc: 'Fantastic and Super Shucker oysters pay 25% more, and the line is more forgiving.' },
+      ] },
+      { id: 'spd', name: 'Speed', color: '#5cc94a', how: 'Earn it by shucking under par.', perks: [
+        { name: 'Fast Grabber',   desc: 'Oysters slide in and out 35% faster.' },
+        { name: 'Quick Hands',    desc: 'Your knife keeps right up with your finger.' },
+        { name: 'Faster Grabber', desc: 'Oysters slide in and out 65% faster.' },
+        { name: 'Speed Demon',    desc: 'Speedy tips are easier to get and pay double.' },
+      ] },
+      { id: 'bld', name: 'Bleeding', color: '#e8322a', how: 'Earn it by cutting yourself. Ouch.', perks: [
+        { name: 'Quick Healer', desc: 'Bandages work twice as fast (half the taps).' },
+        { name: 'Thick Skin',   desc: 'Takes a lot more to cut you. 40% fewer cuts.' },
+        { name: 'Pro Bleeder',  desc: 'Your blood never lands on the oysters.' },
+        { name: 'Regeneration', desc: 'Cuts heal on their own, no bandages needed. Blood goes everywhere. Except the oysters.' },
+      ] },
+    ],
+  },
+
   // ---------------- Mini games (between shifts, just for fun) ----------------
   miniGames: true,             // offer a mini game after every shift
   lemonToss: {
@@ -129,7 +164,7 @@ window.SHUCK_CONFIG = {
 
   // Animation timings (seconds)
   orderUpTime: 1.4,
-  slideInTime: 0.35,
-  shuckedHold: 0.8,
-  slideOutTime: 0.3,
+  slideInTime: 0.6,            // oysters arrive a bit slowly; Speed perks make this snappier
+  shuckedHold: 1.0,
+  slideOutTime: 0.45,
 };

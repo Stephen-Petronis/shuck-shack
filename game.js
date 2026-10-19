@@ -107,12 +107,14 @@
   function freshSave() {
     const owned = {}; C.gear.forEach((g) => { owned[g.id] = 0; });
     return { cash: C.startCash || 0, owned, venue: C.venues[0].id, unlocked: [C.venues[0].id],
-             shifts: 0, oysters: 0, bestShift: 0, cuts: 0, rep: {} };
+             shifts: 0, oysters: 0, bestShift: 0, cuts: 0, rep: {},
+             xp: { acc: 0, spd: 0, bld: 0 }, perks: { acc: 0, spd: 0, bld: 0 }, xpTotal: 0, radio: 0 };
   }
   function loadSave() {
     try {
       const s = JSON.parse(localStorage.getItem(SAVE_KEY));
-      if (s && s.owned) { const f = freshSave(); return Object.assign(f, s, { owned: Object.assign(f.owned, s.owned), rep: Object.assign({}, s.rep) }); }
+      if (s && s.owned) { const f = freshSave(); return Object.assign(f, s, { owned: Object.assign(f.owned, s.owned), rep: Object.assign({}, s.rep),
+        xp: Object.assign(f.xp, s.xp), perks: Object.assign(f.perks, s.perks) }); }
     } catch (e) { /* no save yet or storage blocked */ }
     return freshSave();
   }
@@ -121,12 +123,23 @@
   const gearDef = (id) => C.gear.find((g) => g.id === id);
   const tier = (id) => { const g = gearDef(id); return g.tiers[Math.min(SAVE.owned[id] || 0, g.tiers.length - 1)]; };
   const venue = () => C.venues.find((v) => v.id === SAVE.venue) || C.venues[0];
-  const cutMult = () => (tier('knife').cut ?? 1) * (tier('glove').cut ?? 1);
-  const napkinTaps = () => tier('aid').taps ?? 3;
+  const SK = C.skills;
+  const perk = (tree, n) => (SAVE.perks[tree] || 0) >= n;
+  const cutMult = () => (tier('knife').cut ?? 1) * (tier('glove').cut ?? 1) * (perk('bld', 2) ? 0.6 : 1);
+  const napkinTaps = () => { const t = tier('aid').taps ?? 3; return perk('bld', 1) ? Math.max(1, Math.ceil(t / 2)) : t; };
+  const coverageNeeded = () => perk('acc', 3) ? 0.75 : perk('acc', 1) ? 0.85 : C.coverageToFinish;
+  const moveMult = () => perk('spd', 3) ? 0.35 : perk('spd', 1) ? 0.65 : 1;
+  const perkCost = (tree) => SK.costs[SAVE.perks[tree] || 0];          // undefined when maxed
+  const perkReady = (tree) => perkCost(tree) !== undefined && SAVE.xp[tree] >= perkCost(tree);
+  function playerLevel() {
+    let lv = 1, need = SK.levelXp, left = SAVE.xpTotal || 0;
+    while (left >= need) { left -= need; lv++; need = Math.round(need * 1.15); }
+    return { lv, into: left, need };
+  }
   const timeMult = () => tier('ice').time ?? 1;
   const cashMult = () => tier('jar').cash ?? 1;
   const repOf = (id) => SAVE.rep[id] || 0;
-  const tolNow = () => L.tol * (tier('knife').grip ?? 1);
+  const tolNow = () => L.tol * (tier('knife').grip ?? 1) * (perk('acc', 4) ? 1.1 : 1);
   const gearOpen = (t) => !t.needs || SAVE.unlocked.includes(t.needs);
   const venueName = (id) => (C.venues.find((v) => v.id === id) || {}).name || id;
   const starsText = (n, of = 5) => { let s = ''; for (let i = 1; i <= of; i++) s += `<i class="st ${n >= i ? 'f' : n >= i - 0.5 ? 'h' : 'e'}">★</i>`; return s; };
@@ -249,7 +262,7 @@
   function startShift() {
     const v = venue();
     const need = pickOrderSize(v);
-    G = { venue: v, need, done: 0, clockMax: shiftClock(need, v), clock: 0, par: v.secsPerOyster * C.parFactor,
+    G = { venue: v, need, done: 0, clockMax: shiftClock(need, v), clock: 0, par: v.secsPerOyster * C.parFactor * (perk('spd', 4) ? 1.3 : 1), xp: { acc: 0, spd: 0, bld: 0 },
           pay: 0, tips: 0, accSum: 0, cuts: 0, served: 0, bandages: [], fast: 0,
           wounds: 0, tapsDone: 0, stun: 0, lastSlip: -9, dripT: 0, drips: [], splats: [], bloody: 0, bloodLoss: 0 };
     G.clock = G.clockMax;
@@ -326,7 +339,7 @@
       if (Math.random() < C.slipCutChance * cutMult()) { cutHand(); return; }
     }
     if (o.cutAt !== null && progress >= o.cutAt && canCut) { o.cutAt = null; cutHand(); return; }
-    if (progress >= C.coverageToFinish) finishOyster();
+    if (progress >= coverageNeeded()) finishOyster();
   }
   function accuracyOf(o) {
     if (!o.n) return 0;
@@ -344,10 +357,12 @@
     let rank = C.grades.findIndex((g) => acc >= g.minAccuracy); if (rank < 0) rank = C.grades.length - 1;
     const grade = C.grades[rank];
     const bloody = o.blood.length > 0;
-    let pay = Math.max(1, Math.round(G.venue.pay * (C.gradePay[rank] ?? 1)));
-    let tip = secs <= G.par ? Math.max(1, Math.round(G.venue.pay * C.speedTipFactor)) : 0;
+    let pay = Math.max(1, Math.round(G.venue.pay * (C.gradePay[rank] ?? 1) * (perk('acc', 4) && rank <= 1 ? 1.25 : 1)));
+    let tip = secs <= G.par ? Math.max(1, Math.round(G.venue.pay * C.speedTipFactor * (perk('spd', 4) ? 2 : 1))) : 0;
+    G.xp.acc += Math.round(acc * SK.xp.accPerOyster);
+    G.xp.spd += secs <= G.par ? SK.xp.spdFast : secs <= G.par * 1.5 ? SK.xp.spdOk : SK.xp.spdSlow;
     let loss = 0;
-    if (bloody) { pay = 0; tip = 0; loss = Math.max(1, Math.round(G.venue.pay * C.bloodPenalty)); G.bloody++; G.bloodLoss += loss; }
+    if (bloody) { pay = 0; tip = 0; loss = Math.max(1, Math.round(G.venue.pay * C.bloodPenalty)); G.bloody++; G.bloodLoss += loss; G.xp.bld += SK.xp.bldPerBloody; }
     G.pay += pay; G.tips += tip; if (tip) G.fast++;
     G.done += 1; G.accSum += acc;
 
@@ -382,6 +397,11 @@
     const nextV = C.venues[C.venues.indexOf(v) + 1];
     const justEarned = repAfter >= C.starsToUnlock && repBefore < C.starsToUnlock && nextV && !SAVE.unlocked.includes(nextV.id);
     pendingLapse = true;
+    const lvBefore = playerLevel().lv;
+    const readyBefore = SK.trees.filter((t) => perkReady(t.id)).length;
+    ['acc', 'spd', 'bld'].forEach((k) => { SAVE.xp[k] += G.xp[k]; SAVE.xpTotal = (SAVE.xpTotal || 0) + G.xp[k]; });
+    const lvAfter = playerLevel().lv;
+    const readyNow = SK.trees.filter((t) => perkReady(t.id));
     SAVE.cash += total; SAVE.shifts += 1; SAVE.oysters += G.done; SAVE.cuts += G.cuts;
     const best = total > SAVE.bestShift; if (best) SAVE.bestShift = total;
     writeSave();
@@ -410,6 +430,7 @@
         <em>${repAfter > repBefore ? '+1 star' : repAfter < repBefore ? '-1 star' : 'no change'}</em></div>
       ${justEarned ? `<p class="nudge">5 stars! ${nextV.name} is ready to open for ${money(nextV.cost)}.</p>` : ''}
       <p class="fine">${G.cuts ? `Cut yourself ${G.cuts === 1 ? 'once' : G.cuts + ' times'}.` : 'No cuts!'}${best ? ' New best shift!' : ''}</p>
+      ${xpBlock(G.xp, lvAfter > lvBefore ? lvAfter : 0, readyNow.length > readyBefore ? readyNow : [])}
       <div class="cashline"><span>Cash</span><strong>${money(SAVE.cash)}</strong></div>
       ${next && SAVE.cash >= next.cost ? `<p class="nudge">You can afford the ${next.name} now.</p>` : ''}`;
     setResultButtons((C.miniGames ?? true) ? 'mini' : 'hub');
@@ -419,7 +440,8 @@
   // ---------- Oops ----------
   function cutHand() {
     pointer.tracing = false;
-    G.cuts += 1; G.wounds += 1; G.stun = C.cutStun; G.dripT = 0.15;
+    G.cuts += 1; G.wounds += 1; G.stun = C.cutStun; G.dripT = 0.15; G.xp.bld += SK.xp.bldPerCut;
+    G.regenT = 2.5;
     hurt = { t: 0 };
     fx.ouch = { x: armTip.x, y: armTip.y, t: 0 };
     for (let i = 0; i < 10; i++) {
@@ -546,7 +568,9 @@
     const v = venue();
     els.hubCash.textContent = money(SAVE.cash);
     els.hubVenue.textContent = v.name;
-    els.hubShift.textContent = `Shift #${SAVE.shifts + 1}`;
+    els.hubShift.textContent = `Shift #${SAVE.shifts + 1} · Level ${playerLevel().lv}`;
+    const sb = document.querySelector('#screenHub [data-tab="skills"]');
+    if (sb) sb.classList.toggle('badge', SK.trees.some((t) => perkReady(t.id)));
     document.querySelectorAll('#screenHub [data-tab]').forEach((b) => {
       const on = b.dataset.tab === hubTab; b.setAttribute('aria-selected', String(on)); b.classList.toggle('on', on);
     });
@@ -568,6 +592,8 @@
         <button class="btn" type="button" data-act="shift">Start shift</button>
         <p class="fine stats">${SAVE.oysters.toLocaleString()} oyster${SAVE.oysters === 1 ? '' : 's'} shucked · best shift ${money(SAVE.bestShift)}</p>
         <button class="linkbtn" type="button" data-act="reset">${resetArmed ? 'Tap again to wipe your save' : 'Start over'}</button>`;
+    } else if (hubTab === 'skills') {
+      h = skillsHTML();
     } else if (hubTab === 'gear') {
       h = C.gear.map((g) => {
         const i = SAVE.owned[g.id] || 0, curT = g.tiers[i], next = g.tiers[i + 1];
@@ -614,6 +640,34 @@
     els.hubBody.innerHTML = h;
   }
 
+  function xpBlock(xp, newLevel, readyTrees) {
+    const chips = SK.trees.filter((t) => xp[t.id] > 0)
+      .map((t) => `<span class="xpchip" style="--c:${t.color}">${t.name} +${xp[t.id]}</span>`).join('');
+    return `<div class="xpline">${chips || '<span class="fine">No XP this time.</span>'}</div>
+      ${newLevel ? `<p class="nudge">Level up! You're level ${newLevel}.</p>` : ''}
+      ${readyTrees.length ? `<p class="nudge skill">New skill ready: ${readyTrees.map((t) => t.perks[SAVE.perks[t.id]].name).join(', ')}! Learn it in Skills.</p>` : ''}`;
+  }
+  function skillsHTML() {
+    const pl = playerLevel();
+    return `<div class="lvbox"><b>Level ${pl.lv}</b><div class="bar"><i style="width:${Math.round(pl.into / pl.need * 100)}%"></i></div><span>${pl.into}/${pl.need} XP</span></div>` +
+      SK.trees.map((t) => {
+        const n = SAVE.perks[t.id] || 0, cost = perkCost(t.id), xp = SAVE.xp[t.id] || 0;
+        const pct = cost === undefined ? 100 : Math.min(100, Math.round(xp / cost * 100));
+        const rows = t.perks.map((pk, i) => {
+          const state = i < n ? 'have' : i === n ? (perkReady(t.id) ? 'ready' : 'next') : 'lock';
+          const right = state === 'have' ? '<span class="maxed">Learned</span>'
+            : state === 'ready' ? `<button class="buy go" type="button" data-act="learn" data-id="${t.id}">Learn!</button>`
+            : state === 'next' ? `<span class="locked">${xp}/${cost} XP</span>` : '<span class="locked">Locked</span>';
+          return `<div class="perk p-${state}"><i class="dot"></i><div class="item-txt"><b>${pk.name}</b><p>${pk.desc}</p></div>${right}</div>`;
+        }).join('');
+        return `<div class="tree" style="--c:${t.color}">
+          <div class="tree-head"><b>${t.name}</b><span>${n}/${t.perks.length}</span></div>
+          <div class="bar"><i style="width:${pct}%"></i></div>
+          <p class="have">${cost === undefined ? 'All perks learned!' : t.how}</p>
+          ${rows}</div>`;
+      }).join('');
+  }
+
   function knifeFeel() {
     const w = tier('knife').wobble ?? 0;
     return w > 0.03 ? 'wobbly' : w > 0.015 ? 'steady-ish' : w > 0.005 ? 'smooth' : 'perfect';
@@ -651,6 +705,7 @@
       const g = gearDef(id), i = SAVE.owned[id] || 0, next = g.tiers[i + 1]; if (!next || !gearOpen(next)) return;
       if (SAVE.cash < next.cost) { SFX.nope(); flash(`Need ${money(next.cost - SAVE.cash)} more`, true); return; }
       SAVE.cash -= next.cost; SAVE.owned[id] = i + 1; writeSave(); SFX.buy(); flash(`Got the ${next.name}!`);
+      if (id === 'radio') { updateRadioBtn(); setTimeout(() => setRadio(0), 400); }
       renderHub(); return;
     }
     if (act === 'unlock') {
@@ -661,6 +716,12 @@
       SAVE.cash -= vv.cost; SAVE.unlocked.push(id); SAVE.venue = id; writeSave(); SFX.buy();
       flash(`Welcome to ${vv.name}!`); hubTab = 'work'; renderHub(); return;
     }
+    if (act === 'learn') {
+      if (!perkReady(id)) return;
+      SAVE.xp[id] -= perkCost(id); SAVE.perks[id] += 1; writeSave(); SFX.buy();
+      const t = SK.trees.find((x) => x.id === id); flash(`Learned ${t.perks[SAVE.perks[id] - 1].name}!`);
+      renderHub(); return;
+    }
     if (act === 'move') { SAVE.venue = id; writeSave(); SFX.slide(); hubTab = 'work'; renderHub(); }
   });
 
@@ -670,7 +731,7 @@
     showScreen(p ? 'pause' : null);
   }
 
-  els.btnStart.addEventListener('click', () => { audio(); openHub('work'); });
+  els.btnStart.addEventListener('click', () => { audio(); if ((SAVE.owned.radio || 0) >= 1 && SAVE.radio >= 0 && SAVE.radio !== undefined && !RADIO.on && SAVE.radioWasOn) setRadio(SAVE.radio); openHub('work'); });
   $('btnBackToShack').addEventListener('click', (e) => {
     audio();
     if (e.currentTarget.dataset.next === 'mini') startLemons();
@@ -720,14 +781,14 @@
         if (G.clock <= 0) { endShift(false); return; }
       }
       if (phase === 'slideIn') {
-        const k = Math.min(1, (T - cur.t0) / C.slideInTime);
+        const k = Math.min(1, (T - cur.t0) / (C.slideInTime * moveMult()));
         cur.x = W + L.D * 0.6 + (L.cx - (W + L.D * 0.6)) * easeOutBack(k);
         cur.spin = cur.rot * easeOutBack(k);
         if (k >= 1) { cur.x = L.cx; cur.spin = cur.rot; phase = 'trace'; cur.startT = 0; }
       } else if (phase === 'shucked') {
-        if (T - cur.t0 >= C.shuckedHold) { phase = 'slideOut'; cur.t0 = T; SFX.slide(); }
+        if (T - cur.t0 >= C.shuckedHold * moveMult()) { phase = 'slideOut'; cur.t0 = T; SFX.slide(); }
       } else if (phase === 'slideOut') {
-        const k = Math.min(1, (T - cur.t0) / C.slideOutTime);
+        const k = Math.min(1, (T - cur.t0) / (C.slideOutTime * moveMult()));
         cur.x = L.cx + (-L.D * 0.7 - L.cx) * easeIn(k);
         if (k >= 1) { if (G.done >= G.need) { endShift(true); return; } nextOyster(); }
       }
@@ -737,20 +798,30 @@
       // the blade follows your finger with some drag and shake (better knives = less)
       if (pointer.tracing && phase === 'trace' && G.stun <= 0) {
         const kt = tier('knife');
-        const lagK = 1 - Math.exp(-dt / Math.max(0.004, kt.lag ?? 0.01));
+        const lagK = 1 - Math.exp(-dt / Math.max(0.004, (kt.lag ?? 0.01) * (perk('spd', 2) ? 0.5 : 1)));
         knife.x += (pointer.x - knife.x) * lagK; knife.y += (pointer.y - knife.y) * lagK;
-        const wob = ((kt.wobble ?? 0) + G.wounds * C.woundWobble) * L.D;
+        const wob = ((kt.wobble ?? 0) * (perk('acc', 2) ? 0.5 : 1) + G.wounds * C.woundWobble) * L.D;
         const nx = knife.x + wob * (Math.sin(T * 6.1) + 0.55 * Math.sin(T * 15.7 + 1.3));
         const ny = knife.y + wob * (Math.cos(T * 5.3 + 0.7) + 0.55 * Math.sin(T * 12.9 + 2.1));
         traceTo(nx, ny);
         armTip.x = nx; armTip.y = ny;
       }
 
+      // Regeneration perk: cuts close by themselves
+      if (G.wounds > 0 && perk('bld', 4)) {
+        G.regenT -= dt;
+        if (G.regenT <= 0) {
+          G.wounds -= 1; G.tapsDone = 0; G.regenT = 2.5;
+          G.bandages.push({ dx: (Math.random() - 0.5) * 50, dy: (Math.random() - 0.5) * 36, rot: Math.random() - 0.5 });
+          fx.popups.push({ text: 'Healed!', sub: '', x: armTip.x, y: armTip.y - L.D * 0.12, t: 0.2, small: true, money: true });
+          if (!G.wounds) hurt = null;
+        }
+      }
       // open cuts drip blood wherever the hand is
       if (G.wounds > 0) {
         G.dripT -= dt;
         if (G.dripT <= 0) {
-          G.dripT = (C.dripEvery / G.wounds) * (0.6 + Math.random() * 0.8);
+          G.dripT = (C.dripEvery / G.wounds) * (0.6 + Math.random() * 0.8) * (perk('bld', 4) ? 0.45 : 1);
           const at = gloveAt || armTip;
           G.drips.push({ x: at.x + (Math.random() - 0.5) * 10, y: at.y, t: 0, r: L.D * (0.018 + Math.random() * 0.014) });
         }
@@ -759,7 +830,7 @@
         d.t += dt;
         if (d.t >= 0.28 && !d.landed) {
           d.landed = true;
-          const onOyster = cur && (phase === 'trace' || phase === 'slideIn') && Math.hypot(d.x - cur.x, d.y - L.cy) < L.D * 0.36;
+          const onOyster = !perk('bld', 3) && cur && (phase === 'trace' || phase === 'slideIn') && Math.hypot(d.x - cur.x, d.y - L.cy) < L.D * 0.36;
           if (onOyster) { cur.blood.push({ dx: (d.x - cur.x) / L.D, dy: (d.y - L.cy) / L.D, r: d.r / L.D }); fx.popups.push({ text: 'Drip!', sub: '', x: d.x, y: d.y - L.D * 0.08, t: 0.3, bad: true, small: true }); }
           else G.splats.push({ x: d.x, y: d.y, r: d.r, t: 0 });
         }
@@ -1233,7 +1304,7 @@
       const L2 = M.lemons[pc.id]; if (L2) L2.quarters += 2;
       let text = `+${per * 2}`, sub = '';
       if (L2 && L2.quarters >= 4) {
-        M.quartered++; M.score += LT.fullLemonBonus ?? 30; text = `+${per * 2 + (LT.fullLemonBonus ?? 30)}`; sub = 'QUARTERED!';
+        M.quartered++; M.score += LT.fullLemonBonus ?? 30; M.xpSpd = (M.xpSpd || 0) + SK.xp.lemonPerQuartered; text = `+${per * 2 + (LT.fullLemonBonus ?? 30)}`; sub = 'QUARTERED!';
         tone(1046, 0.12, 'square', 0.06, 0, 0.05); tone(1568, 0.14, 'square', 0.06, 0, 0.12);
       }
       fx.popups.push({ text, sub, x: pc.x, y: pc.y - pc.r, t: 0, money: true });
@@ -1251,7 +1322,7 @@
     if (!M) return;
     M.t += dt;
     // knife follows the finger (better knives feel snappier)
-    const lag = (tier('knife').lag ?? 0.05) * 0.5;
+    const lag = (tier('knife').lag ?? 0.05) * 0.5 * (perk('spd', 2) ? 0.5 : 1);
     const k = 1 - Math.exp(-dt / Math.max(0.004, lag));
     const tx = pointer.down ? pointer.x : L.rest.x + Math.sin(T * 1.6) * 8;
     const ty = pointer.down ? pointer.y : L.rest.y + Math.sin(T * 2.3) * 10;
@@ -1362,6 +1433,10 @@
     hudLabels(['Working at', 'Shucked', 'Earned']);
     const best = M.score > (SAVE.lemonBest || 0);
     if (best) SAVE.lemonBest = M.score;
+    const lvB = playerLevel().lv, rdB = SK.trees.filter((t) => perkReady(t.id)).length;
+    const lemonXp = { acc: 0, spd: M.xpSpd || 0, bld: 0 };
+    SAVE.xp.spd += lemonXp.spd; SAVE.xpTotal = (SAVE.xpTotal || 0) + lemonXp.spd;
+    const lvA = playerLevel().lv, rdA = SK.trees.filter((t) => perkReady(t.id));
     writeSave();
     SFX.orderUp();
     const pct = M.thrown ? Math.round((M.quartered / M.thrown) * 100) : 0;
@@ -1378,6 +1453,7 @@
         ${row('Score', M.score.toLocaleString(), 'total')}
       </div>
       <p class="fine">${pct >= 90 ? 'Lemon master! The octopus is impressed.' : pct >= 60 ? 'Nice knife work. Enough lemons for a busy night.' : pct >= 30 ? 'Some lemons got away. The seagulls say thanks.' : 'The octopus is going to need more lemons.'}${best ? ' New best!' : ''}</p>
+      ${lemonXp.spd ? xpBlock(lemonXp, lvA > lvB ? lvA : 0, rdA.length > rdB ? rdA : []) : ''}
       <div class="cashline"><span>Best</span><strong>${(SAVE.lemonBest || 0).toLocaleString()}</strong></div>`;
     setResultButtons('hub');
     showScreen('result');
@@ -1477,6 +1553,138 @@
     if (lapse.t >= LAPSE.hold + LAPSE.step * PHASES.length + LAPSE.after) { lapse = null; openHub('work'); }
   }
 
+  // =====================================================================
+  //  BEACH RADIO: three stations of original 8-bit beach tunes, made live
+  //  with the Web Audio API. Each song is a 4-bar loop of 16th-note steps.
+  // =====================================================================
+  const N = (name) => { // 'C4' -> midi
+    const m = /^([A-G])(#|b)?(\d)$/.exec(name); if (!m) return null;
+    const base = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
+    return 12 * (+m[3] + 1) + base;
+  };
+  const hz = (midi) => 440 * Math.pow(2, (midi - 69) / 12);
+  // melody strings: space-separated tokens per 16th step; '.' = rest, '-' = hold
+  const seq = (s) => s.trim().split(/\s+/);
+  const STATIONS = [
+    { name: 'Reggae Rays', bpm: 78,
+      chords: [['C4', 'E4', 'G4'], ['A3', 'C4', 'E4'], ['F3', 'A3', 'C4'], ['G3', 'B3', 'D4']],
+      bass:   ['C2', 'A1', 'F1', 'G1'],
+      lead: seq(`
+        .  .  E5 -  G5 -  .  E5   D5 -  C5 -  .  .  .  .
+        .  .  C5 -  E5 -  .  C5   A4 -  -  -  .  .  .  .
+        .  .  A4 -  C5 -  .  D5   C5 -  A4 -  G4 -  .  .
+        .  .  G4 -  A4 -  B4 -    D5 -  -  -  -  -  .  .`),
+      style: 'reggae' },
+    { name: 'Surf Shack 8-Bit', bpm: 152,
+      chords: [['C4', 'E4', 'G4'], ['A3', 'C4', 'E4'], ['F3', 'A3', 'C4'], ['G3', 'B3', 'D4']],
+      bass:   ['C2', 'A1', 'F2', 'G2'],
+      lead: seq(`
+        G5 -  E5 -  G5 -  A5 -    G5 -  E5 -  C5 -  D5 -
+        E5 -  C5 -  E5 -  G5 -    A5 -  -  -  G5 -  E5 -
+        F5 -  A5 -  C6 -  A5 -    G5 -  F5 -  E5 -  C5 -
+        D5 -  E5 -  F5 -  G5 -    A5 -  B5 -  D6 -  -  -`),
+      style: 'surf' },
+    { name: 'Calypso Coconut', bpm: 116,
+      chords: [['F3', 'A3', 'C4'], ['C4', 'E4', 'Bb4'], ['F3', 'A3', 'C4'], ['C4', 'E4', 'G4']],
+      bass:   ['F2', 'C2', 'F2', 'C2'],
+      lead: seq(`
+        C5 .  F5 .  A5 .  G5 F5   .  E5 .  F5 G5 -  .  .
+        Bb4 . E5 .  G5 .  F5 E5   .  D5 .  E5 C5 -  .  .
+        C5 .  F5 .  A5 .  C6 A5   .  G5 .  A5 F5 -  .  .
+        G5 .  F5 .  E5 .  D5 E5   .  F5 .  E5 C5 -  .  .`),
+      style: 'calypso' },
+  ];
+  const RADIO = { on: false, station: 0, step: 0, nextT: 0, timer: null, out: null };
+  function radioOut() {
+    const a = audio(); if (!a) return null;
+    if (!RADIO.out) { RADIO.out = a.createGain(); RADIO.out.gain.value = C.radioVolume ?? 0.55; RADIO.out.connect(a.destination); }
+    return a;
+  }
+  function rNote(a, type, f, t, dur, vol, glideTo = 0) {
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    if (glideTo) o.frequency.exponentialRampToValueAtTime(glideTo, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(RADIO.out); o.start(t); o.stop(t + dur + 0.03);
+  }
+  function rNoise(a, t, dur, vol, type, freq) {
+    const buf = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate);
+    const d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const s = a.createBufferSource(); s.buffer = buf;
+    const f = a.createBiquadFilter(); f.type = type; f.frequency.value = freq;
+    const g = a.createGain(); g.gain.value = vol;
+    s.connect(f).connect(g).connect(RADIO.out); s.start(t);
+  }
+  const kick = (a, t, v = 0.5) => rNote(a, 'sine', 130, t, 0.16, v, 45);
+  const snare = (a, t, v = 0.22) => rNoise(a, t, 0.12, v, 'bandpass', 1800);
+  const hat = (a, t, v = 0.07) => rNoise(a, t, 0.03, v, 'highpass', 7000);
+  const steel = (a, f, t, v) => { rNote(a, 'sine', f, t, 0.4, v); rNote(a, 'sine', f * 2, t, 0.22, v * 0.35); rNote(a, 'triangle', f * 3, t, 0.08, v * 0.15); };
+
+  function radioStep(a, st, step, t, sd) {
+    const bar = Math.floor(step / 16) % 4, s = step % 16;
+    const chord = st.chords[bar].map(N), root = N(st.bass[bar]);
+    const tok = st.lead[step % st.lead.length];
+    let held = 1; for (let k = step + 1; k < step + 16 && st.lead[k % st.lead.length] === '-'; k++) held++;
+    const lead = tok && tok !== '.' && tok !== '-' ? N(tok) : null;
+    if (st.style === 'reggae') {
+      if (s === 4 || s === 12) chord.forEach((m) => rNote(a, 'square', hz(m + 12), t, sd * 0.7, 0.035));      // the skank
+      if (s === 0 || s === 6) rNote(a, 'triangle', hz(root), t, sd * 3, 0.32);
+      if (s === 10) rNote(a, 'triangle', hz(root + 7), t, sd * 2, 0.28);
+      if (s === 8) { kick(a, t); rNoise(a, t, 0.05, 0.12, 'bandpass', 3000); }                             // one drop
+      if (s % 2 === 0) hat(a, t, s % 4 === 2 ? 0.08 : 0.04);
+      if (lead) rNote(a, 'square', hz(lead), t, sd * held * 0.9, 0.05);
+    } else if (st.style === 'surf') {
+      if (s % 2 === 0) rNote(a, 'triangle', hz(root + (s % 8 === 4 ? 7 : 0)), t, sd * 1.6, 0.3);              // driving bass
+      if (s % 4 === 2) chord.forEach((m) => rNote(a, 'square', hz(m), t, sd * 0.9, 0.022));
+      if (s === 0 || s === 8) kick(a, t, 0.45);
+      if (s === 4 || s === 12) snare(a, t);
+      if (s % 2 === 0) hat(a, t);
+      if (lead) {                                                                                            // twangy lead with a little wobble
+        rNote(a, 'square', hz(lead), t, sd * held * 0.95, 0.045);
+        rNote(a, 'sawtooth', hz(lead) * 1.005, t, sd * held * 0.6, 0.012);
+      }
+      if (s === 0) chord.forEach((m) => rNote(a, 'sine', hz(m + 12), t, sd * 15, 0.02));                     // "ooo" pad
+    } else {
+      if (s === 0 || s === 3 || s === 6 || s === 8 || s === 11 || s === 14) rNote(a, 'triangle', hz(root + (s >= 8 ? 7 : 0)), t, sd * 1.5, 0.3); // tresillo bass
+      if (s % 4 === 2) chord.forEach((m) => rNote(a, 'square', hz(m), t, sd * 0.6, 0.02));
+      rNoise(a, t, 0.025, s % 2 ? 0.03 : 0.06, 'highpass', 6000);                                             // shaker
+      if (s === 0 || s === 8) kick(a, t, 0.35);
+      if (s === 6 || s === 14) rNote(a, 'square', 900, t, 0.03, 0.04);                                       // cowbell-ish
+      if (lead) steel(a, hz(lead), t, 0.11);
+    }
+  }
+  function radioTick() {
+    const a = radioOut(); if (!a || !RADIO.on) return;
+    const st = STATIONS[RADIO.station], sd = 60 / st.bpm / 4;
+    if (RADIO.nextT < a.currentTime) RADIO.nextT = a.currentTime + 0.05;
+    while (RADIO.nextT < a.currentTime + 0.15) {
+      if (!muted) radioStep(a, st, RADIO.step, RADIO.nextT, sd);
+      RADIO.nextT += sd; RADIO.step = (RADIO.step + 1) % 64;
+    }
+  }
+  function setRadio(idx) {   // -1 = off
+    if (idx < 0) { RADIO.on = false; clearInterval(RADIO.timer); RADIO.timer = null; }
+    else {
+      RADIO.station = idx; RADIO.step = 0; RADIO.on = true; RADIO.nextT = 0;
+      if (!RADIO.timer) RADIO.timer = setInterval(radioTick, 25);
+    }
+    SAVE.radio = Math.max(0, idx); SAVE.radioWasOn = idx >= 0; writeSave(); updateRadioBtn();
+  }
+  function updateRadioBtn() {
+    const b = $('btnRadio'); if (!b) return;
+    const owned = (SAVE.owned.radio || 0) >= 1;
+    b.hidden = !owned;
+    b.textContent = RADIO.on ? `Radio: ${STATIONS[RADIO.station].name}` : 'Radio: off';
+    b.setAttribute('aria-pressed', String(RADIO.on));
+  }
+  $('btnRadio').addEventListener('click', () => {
+    audio();
+    const next = RADIO.on ? (RADIO.station + 1 < STATIONS.length ? RADIO.station + 1 : -1) : 0;
+    setRadio(next);
+    if (next >= 0) flash(`Now playing: ${STATIONS[next].name}`);
+  });
+
   // ---------- Loop ----------
   let last = performance.now();
   function frame(now) {
@@ -1502,6 +1710,7 @@
     layout();
     armTip = { x: L.rest.x, y: L.rest.y };
     setMuted(muted);
+    updateRadioBtn();
     refreshTitle();
     updateHud();
     showScreen('title');
