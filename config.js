@@ -77,6 +77,9 @@ window.SHUCK_CONFIG = {
   shiftExtraTime: 5,           // free seconds added to every shift clock
 
   // ---------------- Tracing ----------------
+  spinAfterShifts: 1,          // oysters start landing at an angle after this many shifts
+  spinPerShiftDeg: 45,         // how much wider the angle range gets each shift (either direction)
+  spinMaxDeg: 180,             // 180 = any angle
   traceTolerance: 0.075,       // how close to the line counts, as a fraction of oyster size
   coverageToFinish: 0.97,      // share of the outline you must trace before it pops
   minTolerancePx: 14,

@@ -265,14 +265,21 @@
     cur = { shape, flip: Math.random() < 0.5, x: W + L.D, t0: T, startT: 0,
             covered: new Uint8Array(SHAPES[shape].length), nCovered: 0,
             errSum: 0, n: 0, off: 0, trail: [], cutAt: null, blood: [] };
+    // after the first shift, oysters land at an angle; the range widens each shift
+    const spinDeg = Math.min(C.spinMaxDeg ?? 180, Math.max(0, SAVE.shifts - (C.spinAfterShifts ?? 1) + 1) * (C.spinPerShiftDeg ?? 45));
+    cur.rot = (Math.random() * 2 - 1) * spinDeg * Math.PI / 180;
+    cur.spin = 0;             // shown angle while it slides in
     cur.pts = screenPath(cur);
     if (G.done >= C.safeOysters && Math.random() < C.randomCutChance * cutMult()) cur.cutAt = 0.3 + Math.random() * 0.5;
     phase = 'slideIn'; pointer.tracing = false;
     SFX.slide();
   }
   function screenPath(o) {
-    const D = L.D, x0 = L.cx - D / 2, y0 = L.cy - D / 2;
-    return SHAPES[o.shape].map(([px, py]) => ({ x: x0 + (o.flip ? 1 - px : px) * D, y: y0 + py * D }));
+    const D = L.D, c = Math.cos(o.rot || 0), s = Math.sin(o.rot || 0);
+    return SHAPES[o.shape].map(([px, py]) => {
+      const lx = ((o.flip ? 1 - px : px) - 0.5) * D, ly = (py - 0.5) * D;
+      return { x: L.cx + lx * c - ly * s, y: L.cy + lx * s + ly * c };
+    });
   }
 
   // ---------- Tracing ----------
@@ -342,7 +349,7 @@
     G.done += 1; G.accSum += acc;
 
     fx.lid = { x: o.x, y: L.cy, vx: (Math.random() < 0.5 ? -1 : 1) * (L.D * (1.2 + Math.random())), vy: -L.D * 4.2,
-               rot: 0, vr: (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 6), shape: o.shape, flip: o.flip, t: 0 };
+               rot: o.spin || 0, vr: (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 6), shape: o.shape, flip: o.flip, t: 0 };
     fx.stamp = bloody ? { text: 'YUCK! BLOODY!', color: '#ff6b5b', t: 0, rank: 5 } : { text: grade.name, color: grade.color, t: 0, rank };
     fx.popups.push(bloody
       ? { text: `-${money(loss)}`, sub: 'blood in the oyster!', x: L.cx, y: L.cy + L.D * 0.42, t: 0, bad: true }
@@ -710,7 +717,8 @@
       if (phase === 'slideIn') {
         const k = Math.min(1, (T - cur.t0) / C.slideInTime);
         cur.x = W + L.D * 0.6 + (L.cx - (W + L.D * 0.6)) * easeOutBack(k);
-        if (k >= 1) { cur.x = L.cx; phase = 'trace'; cur.startT = 0; }
+        cur.spin = cur.rot * easeOutBack(k);
+        if (k >= 1) { cur.x = L.cx; cur.spin = cur.rot; phase = 'trace'; cur.startT = 0; }
       } else if (phase === 'shucked') {
         if (T - cur.t0 >= C.shuckedHold) { phase = 'slideOut'; cur.t0 = T; SFX.slide(); }
       } else if (phase === 'slideOut') {
@@ -827,7 +835,7 @@
     const key = o.shape + (phase === 'slideIn' || phase === 'trace' ? '_top' : '_bottom');
     const s = silhouette(key); if (!s) return;
     const D = L.D;
-    ctx.save(); ctx.globalAlpha = 0.3; ctx.translate(x + D * 0.025, y + D * 0.045); if (o.flip) ctx.scale(-1, 1);
+    ctx.save(); ctx.globalAlpha = 0.3; ctx.translate(x + D * 0.025, y + D * 0.045); ctx.rotate(o.spin || 0); if (o.flip) ctx.scale(-1, 1);
     ctx.drawImage(s, -D / 2, -D / 2, D, D); ctx.restore();
   }
   function drawOysterImg(key, x, y, flip, rot = 0, scale = 1, alpha = 1) {
@@ -1055,11 +1063,11 @@
     if (state === 'play' && cur) {
       drawShadow(cur, cur.x, L.cy);
       if (phase === 'slideIn' || phase === 'trace') {
-        drawOysterImg(cur.shape + '_top', cur.x, L.cy, cur.flip);
-        drawEyes(cur.shape, cur.x, L.cy, cur.flip, 0, 1, G.done);
+        drawOysterImg(cur.shape + '_top', cur.x, L.cy, cur.flip, cur.spin);
+        drawEyes(cur.shape, cur.x, L.cy, cur.flip, cur.spin, 1, G.done);
         drawBloodOn(cur);
         if (phase === 'trace') { drawGuide(cur); drawTrail(cur); drawHint(cur); }
-      } else { drawOysterImg(cur.shape + '_bottom', cur.x, L.cy, cur.flip); drawBloodOn(cur); }
+      } else { drawOysterImg(cur.shape + '_bottom', cur.x, L.cy, cur.flip, cur.spin); drawBloodOn(cur); }
     }
     if (state === 'play') drawDrips();
     fx.splash.forEach((s) => {
