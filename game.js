@@ -48,6 +48,15 @@
     loadImg('napkin', 'assets/napkin.webp'),
     loadImg('hand', 'assets/hand.webp'),
     loadImg('cuff', 'assets/cuff.webp'),
+    loadImg('lemon_beach', 'assets/lemon_beach.webp'),
+    loadImg('lemon_whole', 'assets/lemon_whole.webp'),
+    loadImg('lemon_half', 'assets/lemon_half.webp'),
+    loadImg('lemon_quarter_a', 'assets/lemon_quarter_a.webp'),
+    loadImg('lemon_quarter_b', 'assets/lemon_quarter_b.webp'),
+    loadImg('tentacle0', 'assets/tentacle0.webp'),
+    loadImg('tentacle1', 'assets/tentacle1.webp'),
+    loadImg('tentacle2', 'assets/tentacle2.webp'),
+    loadImg('tentacle3', 'assets/tentacle3.webp'),
   ];
   SHAPE_NAMES.forEach((n) => {
     assetJobs.push(loadImg(n + '_top', `assets/oyster_${n}_top.webp`));
@@ -208,6 +217,7 @@
     L.rest = { x: W - Math.min(W * 0.2, 120), y: L.cy + L.D * 0.05 };
 
     if (cur) cur.pts = screenPath(cur);
+    lemonLayout();
   }
 
   // ---------- State ----------
@@ -391,6 +401,7 @@
       <p class="fine">${G.cuts ? `Cut yourself ${G.cuts === 1 ? 'once' : G.cuts + ' times'}.` : 'No cuts!'}${best ? ' New best shift!' : ''}</p>
       <div class="cashline"><span>Cash</span><strong>${money(SAVE.cash)}</strong></div>
       ${next && SAVE.cash >= next.cost ? `<p class="nudge">You can afford the ${next.name} now.</p>` : ''}`;
+    setResultButtons((C.miniGames ?? true) ? 'mini' : 'hub');
     showScreen('result');
   }
 
@@ -432,6 +443,7 @@
     const p = localPos(e);
     pointer.id = e.pointerId; pointer.down = true; pointer.type = e.pointerType; pointer.x = p.x; pointer.y = p.y;
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    if (state === 'lemon') { e.preventDefault(); return; }
     if (state !== 'play' || paused) return;
     if (G.wounds && inNapkin(p.x, p.y, 44)) { tapNapkin(); e.preventDefault(); return; }
     if (G.stun > 0) return;
@@ -463,8 +475,8 @@
     els.hub.hidden = which !== 'hub';
     els.result.hidden = which !== 'result';
     els.pause.hidden = which !== 'pause';
-    els.btnPause.hidden = state !== 'play';
-    document.body.classList.toggle('on-shift', state === 'play');
+    els.btnPause.hidden = !(state === 'play' || state === 'lemon');
+    document.body.classList.toggle('on-shift', state === 'play' || state === 'lemon');
     const focusBtn = { title: 'btnStart', result: 'btnBackToShack', pause: 'btnResume' }[which];
     if (focusBtn) setTimeout(() => { const b = $(focusBtn); if (b) b.focus({ preventScroll: true }); }, 30);
   }
@@ -641,18 +653,27 @@
   });
 
   function setPaused(p) {
-    if (state !== 'play') return;
+    if (state !== 'play' && state !== 'lemon') return;
     paused = p; pointer.tracing = false;
     showScreen(p ? 'pause' : null);
   }
 
   els.btnStart.addEventListener('click', () => { audio(); openHub('work'); });
-  $('btnBackToShack').addEventListener('click', () => { audio(); openHub('work'); });
+  $('btnBackToShack').addEventListener('click', (e) => {
+    audio();
+    if (e.currentTarget.dataset.next === 'mini') startLemons();
+    else { M = null; openHub('work'); }
+  });
+  $('btnSkipMini').addEventListener('click', () => { audio(); M = null; openHub('work'); });
   $('btnResume').addEventListener('click', () => setPaused(false));
-  $('btnWalkOut').addEventListener('click', () => { paused = false; endShift(false); });
+  $('btnWalkOut').addEventListener('click', () => {
+    paused = false;
+    if (state === 'lemon') { M.pieces = []; M.arms.forEach((a) => { a.hold = null; }); endLemons(); }
+    else endShift(false);
+  });
   els.btnPause.addEventListener('click', () => setPaused(!paused));
   els.btnMute.addEventListener('click', () => setMuted(!muted));
-  document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play' && !paused) setPaused(true); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && (state === 'play' || state === 'lemon') && !paused) setPaused(true); });
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' || e.key === 'p') setPaused(!paused);
     if (e.key === 'm') setMuted(!muted);
@@ -1057,17 +1078,317 @@
     ctx.restore();
   }
 
+  // =====================================================================
+  //  MINI GAME: LEMON TOSS
+  //  Your octopus buddy throws lemons up with his eight arms. Slice each one
+  //  in half, then slice the halves into quarters. Only quarters score.
+  // =====================================================================
+  const LT = C.lemonToss || {};
+  const TENT = [   // tentacle sprites: base (cut end) and tip (top of the curl), in sprite pixels
+    { base: [99.2, 403.2], tip: [134.0, 12.7] },
+    { base: [116.6, 382.2], tip: [192.4, 11.5] },
+    { base: [107.2, 402.6], tip: [210.0, 12.7] },
+    { base: [65.4, 355.8], tip: [180.2, 11.3] },
+  ];
+  // Arm sockets on the beach art (1029 x 1447): x, y, resting angle in degrees, in front of the body?
+  const SOCKETS = [
+    { x: 450, y: 1110, ang: -150, front: false, sprite: 1 },
+    { x: 731, y: 1102, ang: -30,  front: false, sprite: 3 },
+    { x: 525, y: 1170, ang: -122, front: false, sprite: 2 },
+    { x: 660, y: 1174, ang: -68,  front: false, sprite: 0 },
+    { x: 411, y: 1165, ang: -172, front: true,  sprite: 0 },
+    { x: 474, y: 1192, ang: -132, front: true,  sprite: 3 },
+    { x: 616, y: 1198, ang: -48,  front: true,  sprite: 1 },
+    { x: 711, y: 1177, ang: -8,   front: true,  sprite: 2 },
+  ];
+  const BEACH = { w: 1029, h: 1447, focusX: 570 };
+  const LEMON_ART = {
+    whole: { key: 'lemon_whole', w: 2.3 },
+    half: { key: 'lemon_half', w: 1.95 },
+    quarterA: { key: 'lemon_quarter_a', w: 1.55 },
+    quarterB: { key: 'lemon_quarter_b', w: 1.55 },
+  };
+  let M = null;
+
+  function lemonLayout() {
+    if (!M) return;
+    const s = Math.max(W / BEACH.w, H / BEACH.h);
+    let ox = W / 2 - BEACH.focusX * s; ox = Math.min(0, Math.max(W - BEACH.w * s, ox));
+    const oy = H - BEACH.h * s;               // keep the sand at the bottom
+    M.bg = { s, ox, oy };
+    M.R = Math.max(20, Math.min(46, Math.min(W, H) * 0.068));
+    M.g = H * 1.45;
+    M.armLen = 160 * s;
+  }
+
+  function startLemons() {
+    state = 'lemon'; phase = 'idle'; paused = false; cur = null; hurt = null;
+    M = { t: 0, intro: LT.introTime ?? 1.6, time: LT.duration ?? 40, timeLeft: LT.duration ?? 40,
+          pieces: [], juice: [], slashes: [], arms: SOCKETS.map((sk, i) => ({ i, phase: 'idle', t: 0, swing: 0, hold: null })),
+          spawnT: 0.4, thrown: 0, quartered: 0, quarters: 0, score: 0, combo: 0, bestCombo: 0, comboT: 0,
+          dropped: 0, nextId: 1, lemons: {}, prev: null, over: false };
+    lemonLayout();
+    armTip.x = L.rest.x; armTip.y = L.rest.y;
+    showScreen(null);
+    hudLabels(['Mini game', 'Quartered', 'Score']);
+    els.venue.textContent = 'Lemon Toss';
+    lemonHud();
+    SFX.orderUp();
+  }
+
+  function hudLabels(t) { document.querySelectorAll('#hud .hud-label').forEach((el, i) => { if (t[i]) el.textContent = t[i]; }); }
+  function lemonHud() {
+    els.count.textContent = String(M.quartered);
+    els.earned.textContent = M.score.toLocaleString();
+    const f = Math.max(0, M.timeLeft / M.time);
+    els.clockFill.style.transform = `scaleX(${f})`;
+    els.clockFill.dataset.low = f < 0.2 ? '1' : '0';
+    els.clockText.textContent = Math.ceil(Math.max(0, M.timeLeft)) + 's';
+  }
+
+  function armPose(a) {
+    const sk = SOCKETS[a.i], b = M.bg;
+    const ax = b.ox + sk.x * b.s, ay = b.oy + sk.y * b.s;
+    let ang = sk.ang * Math.PI / 180 + Math.sin(T * 1.7 + a.i * 1.3) * 0.12;
+    const out = sk.ang < -90 ? -1 : 1;          // which way is "outward" for this arm
+    if (a.phase === 'wind') ang += out * 0.55 * Math.min(1, a.t / 0.3);
+    if (a.phase === 'flick') { const k = Math.min(1, a.t / 0.12); ang += out * (0.55 - 1.15 * k); }
+    if (a.phase === 'recover') { const k = Math.min(1, a.t / 0.4); ang += out * (-0.6 * (1 - k)); }
+    const tipX = ax + Math.cos(ang) * M.armLen, tipY = ay + Math.sin(ang) * M.armLen;
+    return { ax, ay, ang, tipX, tipY, flip: sk.ang < -90 };
+  }
+
+  function drawTentacle(a) {
+    const sk = SOCKETS[a.i], d = TENT[sk.sprite], im = IMG['tentacle' + sk.sprite]; if (!im) return;
+    const p = armPose(a);
+    const vx = (d.tip[0] - d.base[0]) * (p.flip ? -1 : 1), vy = d.tip[1] - d.base[1];
+    const len = Math.hypot(vx, vy), k = M.armLen / len;
+    const rot = p.ang - Math.atan2(vy, vx);
+    ctx.save(); ctx.translate(p.ax, p.ay); ctx.rotate(rot); ctx.scale(k * (p.flip ? -1 : 1), k);
+    ctx.drawImage(im, -d.base[0], -d.base[1]);
+    ctx.restore();
+    if (a.hold) drawPiece({ kind: 'whole', x: p.tipX, y: p.tipY, rot: Math.sin(T * 6 + a.i) * 0.2, r: M.R, art: 'whole' });
+  }
+
+  function throwLemon() {
+    const idle = M.arms.filter((a) => a.phase === 'idle');
+    if (!idle.length) return;
+    const a = idle[(Math.random() * idle.length) | 0];
+    a.phase = 'wind'; a.t = 0; a.hold = true;
+  }
+
+  function releaseLemon(a) {
+    const p = armPose(a);
+    const apexY = H * (0.1 + Math.random() * 0.3);
+    const rise = Math.max(H * 0.2, p.tipY - apexY);
+    const vy = -Math.sqrt(2 * M.g * rise);
+    const tFlight = (-vy / M.g) * 2;
+    const tx = W * (0.15 + Math.random() * 0.7);
+    const vx = ((tx - p.tipX) / tFlight) * 0.9;
+    const id = M.nextId++;
+    M.lemons[id] = { quarters: 0 };
+    M.pieces.push({ id, kind: 'whole', art: 'whole', x: p.tipX, y: p.tipY, vx, vy, rot: 0, vr: (Math.random() - 0.5) * 6, r: M.R, cool: 0 });
+    M.thrown++;
+    a.hold = null;
+    tone(520 + Math.random() * 120, 0.08, 'triangle', 0.06, 900);
+  }
+
+  function segCircle(x1, y1, x2, y2, cx, cy, r) {
+    const dx = x2 - x1, dy = y2 - y1, l2 = dx * dx + dy * dy || 1;
+    let t = ((cx - x1) * dx + (cy - y1) * dy) / l2; t = Math.max(0, Math.min(1, t));
+    const ex = x1 + dx * t - cx, ey = y1 + dy * t - cy;
+    return ex * ex + ey * ey <= r * r;
+  }
+
+  function slicePiece(pc, sx, sy) {
+    const len = Math.hypot(sx, sy) || 1, ux = sx / len, uy = sy / len, nx = -uy, ny = ux;
+    const kick = Math.min(W, H) * 0.32;
+    const kids = [];
+    const child = (sign, kind, art, r) => ({
+      id: pc.id, kind, art, r,
+      x: pc.x + nx * sign * pc.r * 0.3, y: pc.y + ny * sign * pc.r * 0.3,
+      vx: pc.vx * 0.6 + nx * sign * kick + ux * kick * 0.25, vy: Math.min(pc.vy, 0) * 0.5 + ny * sign * kick - kick * 0.6,
+      rot: Math.atan2(ny, nx) + (sign > 0 ? 0 : Math.PI), vr: sign * (3 + Math.random() * 4), cool: 0.18,
+    });
+    if (pc.kind === 'whole') {
+      kids.push(child(1, 'half', 'half', M.R * 0.86), child(-1, 'half', 'half', M.R * 0.86));
+      fx.popups.push({ text: 'HALF!', sub: '', x: pc.x, y: pc.y - pc.r, t: 0.25, small: true });
+    } else {
+      kids.push(child(1, 'quarter', 'quarterA', M.R * 0.66), child(-1, 'quarter', 'quarterB', M.R * 0.66));
+      const per = LT.pointsPerQuarter ?? 10;
+      M.quarters += 2; M.score += per * 2;
+      const L2 = M.lemons[pc.id]; if (L2) L2.quarters += 2;
+      let text = `+${per * 2}`, sub = '';
+      if (L2 && L2.quarters >= 4) {
+        M.quartered++; M.score += LT.fullLemonBonus ?? 30; text = `+${per * 2 + (LT.fullLemonBonus ?? 30)}`; sub = 'QUARTERED!';
+        tone(1046, 0.12, 'square', 0.06, 0, 0.05); tone(1568, 0.14, 'square', 0.06, 0, 0.12);
+      }
+      fx.popups.push({ text, sub, x: pc.x, y: pc.y - pc.r, t: 0, money: true });
+    }
+    M.combo++; M.comboT = 0.35;
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random() * Math.PI * 2, v = Math.min(W, H) * (0.2 + Math.random() * 0.6);
+      M.juice.push({ x: pc.x, y: pc.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - v * 0.4, r: 2 + Math.random() * 4, t: 0 });
+    }
+    noise(0.07, 0.22, 2500); tone(900 + Math.random() * 300, 0.06, 'square', 0.05, 400);
+    return kids;
+  }
+
+  function updateLemons(dt) {
+    if (!M) return;
+    M.t += dt;
+    // knife follows the finger (better knives feel snappier)
+    const lag = (tier('knife').lag ?? 0.05) * 0.5;
+    const k = 1 - Math.exp(-dt / Math.max(0.004, lag));
+    const tx = pointer.down ? pointer.x : L.rest.x + Math.sin(T * 1.6) * 8;
+    const ty = pointer.down ? pointer.y : L.rest.y + Math.sin(T * 2.3) * 10;
+    const px = armTip.x, py = armTip.y;
+    armTip.x += (tx - armTip.x) * k; armTip.y += (ty - armTip.y) * k;
+
+    if (paused) return;
+    const playing = M.t > M.intro && !M.over;
+    if (playing) {
+      M.timeLeft -= dt;
+      const prog = 1 - Math.max(0, M.timeLeft) / M.time;
+      if (M.timeLeft > 0) {
+        M.spawnT -= dt;
+        if (M.spawnT <= 0) {
+          throwLemon();
+          if (Math.random() < 0.1 + prog * 0.45) throwLemon();
+          if (prog > 0.6 && Math.random() < prog * 0.25) throwLemon();
+          M.spawnT = (LT.startEvery ?? 1.5) + ((LT.endEvery ?? 0.6) - (LT.startEvery ?? 1.5)) * prog;
+        }
+      }
+    }
+    // arms
+    M.arms.forEach((a) => {
+      a.t += dt;
+      if (a.phase === 'wind' && a.t >= 0.32) { a.phase = 'flick'; a.t = 0; releaseLemon(a); }
+      else if (a.phase === 'flick' && a.t >= 0.12) { a.phase = 'recover'; a.t = 0; }
+      else if (a.phase === 'recover' && a.t >= 0.4) { a.phase = 'idle'; a.t = 0; }
+    });
+    // slicing: the blade has to be moving fast while your finger is down
+    const sx = armTip.x - px, sy = armTip.y - py, speed = Math.hypot(sx, sy) / Math.max(dt, 1e-3);
+    const slicing = pointer.down && speed > Math.min(W, H) * (LT.sliceSpeed ?? 1.1);
+    if (slicing) M.slashes.push({ x1: px, y1: py, x2: armTip.x, y2: armTip.y, t: 0 });
+    const next = [];
+    M.pieces.forEach((pc) => {
+      pc.cool = Math.max(0, pc.cool - dt);
+      if (slicing && pc.kind !== 'quarter' && pc.cool <= 0 && segCircle(px, py, armTip.x, armTip.y, pc.x, pc.y, pc.r * 1.05)) {
+        next.push(...slicePiece(pc, sx, sy));
+        return;
+      }
+      pc.vy += M.g * dt; pc.x += pc.vx * dt; pc.y += pc.vy * dt; pc.rot += pc.vr * dt;
+      if (pc.y - pc.r > H && pc.vy > 0) {
+        if (pc.kind === 'whole') M.dropped++;
+        return;
+      }
+      next.push(pc);
+    });
+    M.pieces = next;
+    M.comboT -= dt;
+    if (M.comboT <= 0 && M.combo) {
+      if (M.combo >= 3) {
+        const bonus = M.combo * (LT.comboBonus ?? 5);
+        M.score += bonus;
+        fx.popups.push({ text: `${M.combo}-CUT COMBO!`, sub: `+${bonus}`, x: W / 2, y: H * 0.3, t: 0, big: true });
+      }
+      M.bestCombo = Math.max(M.bestCombo, M.combo); M.combo = 0;
+    }
+    M.juice.forEach((j) => { j.t += dt; j.vy += M.g * 0.6 * dt; j.x += j.vx * dt; j.y += j.vy * dt; });
+    M.juice = M.juice.filter((j) => j.t < 0.7);
+    M.slashes.forEach((s) => { s.t += dt; }); M.slashes = M.slashes.filter((s) => s.t < 0.18);
+    fx.popups.forEach((p) => { p.t += dt; }); fx.popups = fx.popups.filter((p) => p.t < 1.1);
+    lemonHud();
+    if (playing && M.timeLeft <= 0 && !M.pieces.length && M.arms.every((a) => !a.hold)) endLemons();
+  }
+
+  function drawPiece(pc) {
+    const art = LEMON_ART[pc.art], im = IMG[art.key]; if (!im) return;
+    const w = pc.r * art.w, h = w * (im.height / im.width);
+    ctx.save(); ctx.translate(pc.x, pc.y); ctx.rotate(pc.rot);
+    ctx.drawImage(im, -w / 2, -h / 2, w, h); ctx.restore();
+  }
+
+  function drawLemons() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const b = M.bg, bg = IMG.lemon_beach;
+    if (bg) ctx.drawImage(bg, b.ox, b.oy, BEACH.w * b.s, BEACH.h * b.s);
+    else { ctx.fillStyle = '#2a6fc9'; ctx.fillRect(0, 0, W, H); }
+    M.arms.filter((a) => !SOCKETS[a.i].front).forEach(drawTentacle);
+    M.arms.filter((a) => SOCKETS[a.i].front).forEach(drawTentacle);
+    M.pieces.forEach(drawPiece);
+    M.juice.forEach((j) => {
+      ctx.save(); ctx.globalAlpha = 1 - j.t / 0.7; ctx.fillStyle = '#ffe14d'; ctx.strokeStyle = 'rgba(120,90,0,0.6)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(j.x, j.y, j.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
+    });
+    ctx.save(); ctx.lineCap = 'round';
+    M.slashes.forEach((s) => {
+      const a = 1 - s.t / 0.18;
+      ctx.strokeStyle = `rgba(255,255,255,${0.9 * a})`; ctx.lineWidth = 10 * a + 2;
+      ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke();
+    });
+    ctx.restore();
+    drawArm();
+    drawPopups();
+    if (M.t < M.intro) {
+      const k = Math.min(1, M.t / 0.25), sc = 0.5 + 0.5 * easeOutBack(k);
+      ctx.save(); ctx.translate(W / 2, H * 0.32); ctx.scale(sc, sc);
+      label('LEMON TOSS!', 0, 0, Math.min(W, H) * 0.12, '#ffd23f', -0.06);
+      label('Slice every lemon into quarters', 0, Math.min(W, H) * 0.11, Math.min(W, H) * 0.05, '#fff3d6');
+      ctx.restore();
+    } else if (M.timeLeft <= 0 && !M.over) {
+      label("That's the last lemon!", W / 2, H * 0.3, Math.min(W, H) * 0.065, '#fff3d6');
+    }
+  }
+
+  function endLemons() {
+    M.over = true;
+    state = 'result';
+    hudLabels(['Working at', 'Shucked', 'Earned']);
+    const best = M.score > (SAVE.lemonBest || 0);
+    if (best) SAVE.lemonBest = M.score;
+    writeSave();
+    SFX.orderUp();
+    const pct = M.thrown ? Math.round((M.quartered / M.thrown) * 100) : 0;
+    const row = (label2, val, cls = '') => `<div class="line ${cls}"><span>${label2}</span><b>${val}</b></div>`;
+    $('resultTitle').textContent = 'Lemons prepped!';
+    $('resultTag').textContent = 'Just for fun';
+    $('resultBody').innerHTML = `
+      <p class="sub">Your octopus buddy threw ${M.thrown} lemons</p>
+      <div class="receipt">
+        ${row('Lemons quartered', `${M.quartered} of ${M.thrown}`)}
+        ${row('Quarter pieces', M.quarters)}
+        ${row('Best combo', M.bestCombo ? `${M.bestCombo} cuts` : '—')}
+        ${row('Dropped whole', M.dropped)}
+        ${row('Score', M.score.toLocaleString(), 'total')}
+      </div>
+      <p class="fine">${pct >= 90 ? 'Lemon master! The octopus is impressed.' : pct >= 60 ? 'Nice knife work. Enough lemons for a busy night.' : pct >= 30 ? 'Some lemons got away. The seagulls say thanks.' : 'The octopus is going to need more lemons.'}${best ? ' New best!' : ''}</p>
+      <div class="cashline"><span>Best</span><strong>${(SAVE.lemonBest || 0).toLocaleString()}</strong></div>`;
+    setResultButtons('hub');
+    showScreen('result');
+  }
+
+  function setResultButtons(next) {
+    const btn = $('btnBackToShack'), skip = $('btnSkipMini');
+    btn.dataset.next = next;
+    btn.textContent = next === 'mini' ? 'Lemon break!' : 'Back to the shack';
+    skip.hidden = next !== 'mini';
+  }
+
   // ---------- Loop ----------
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    update(dt); draw();
+    if (state === 'lemon' || (state === 'result' && M && M.over)) { updateLemons(dt); if (M) drawLemons(); }
+    else { update(dt); draw(); }
     requestAnimationFrame(frame);
   }
 
   // Read-only peek for debugging in the console.
   window.__shuck = { get oyster() { return cur && { shape: cur.shape, flip: cur.flip, pts: cur.pts, phase }; },
-                     get shift() { return G; }, get save() { return SAVE; } };
+                     get shift() { return G; }, get save() { return SAVE; }, get lemons() { return M; } };
 
   window.addEventListener('resize', layout);
   if (window.visualViewport) window.visualViewport.addEventListener('resize', layout);

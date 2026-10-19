@@ -107,6 +107,19 @@ window.SHUCK_CONFIG = {
   dripEvery: 1.1,              // seconds between blood drips with one open cut (faster with more)
   bloodPenalty: 1.0,           // a bloody oyster pays nothing and costs this many times its pay
 
+  // ---------------- Mini games (between shifts, just for fun) ----------------
+  miniGames: true,             // offer a mini game after every shift
+  lemonToss: {
+    duration: 40,              // seconds of lemon throwing
+    introTime: 1.6,
+    startEvery: 1.5,           // seconds between throws at the start...
+    endEvery: 0.6,             // ...and at the end
+    sliceSpeed: 1.1,           // how fast the blade must move to slice (screen sizes per second)
+    pointsPerQuarter: 10,
+    fullLemonBonus: 30,        // all four quarters of one lemon
+    comboBonus: 5,             // per cut, for 3+ cuts in one swipe
+  },
+
   // Animation timings (seconds)
   orderUpTime: 1.4,
   slideInTime: 0.35,

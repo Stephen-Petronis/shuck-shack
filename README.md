@@ -16,3 +16,7 @@ Add `assets/oyster_<name>_top.webp` and `_bottom.webp` (square, transparent, sam
 
 ## Giving a restaurant its own look
 Each place in `venues` takes an optional `background` (a counter drawing the same size and layout as `assets/counter.webp`). Without one, the shack counter is shown with that place's `tint`.
+
+## Mini game: Lemon Toss
+After every shift's receipt you can take a lemon break (or skip it). Your octopus buddy throws lemons up with his eight arms; swipe fast to slice each lemon in half, then slice the halves into quarters. Only quarters score, and quartering a whole lemon earns a bonus. It's just for fun and keeps a best score. Tune it under `lemonToss` in `config.js`, or set `miniGames: false` to turn it off.
+Art: `lemon_beach.webp` (background), `tentacle0-3.webp` (arms), `lemon_whole/half/quarter_a/quarter_b.webp`. Arm sockets and angles are in `SOCKETS` in `game.js`.
