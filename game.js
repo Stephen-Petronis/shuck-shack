@@ -49,10 +49,7 @@
     loadImg('hand', 'assets/hand.webp'),
     loadImg('cuff', 'assets/cuff.webp'),
     loadImg('lemon_beach', 'assets/lemon_beach.webp'),
-    loadImg('shack_sunset', 'assets/shack_sunset.webp'),
-    loadImg('shack_night', 'assets/shack_night.webp'),
-    loadImg('shack_sunrise', 'assets/shack_sunrise.webp'),
-    loadImg('shack_day', 'assets/shack_day.webp'),
+
     loadImg('lemon_whole', 'assets/lemon_whole.webp'),
     loadImg('lemon_half', 'assets/lemon_half.webp'),
     loadImg('lemon_quarter_a', 'assets/lemon_quarter_a.webp'),
@@ -67,6 +64,7 @@
     assetJobs.push(loadImg(n + '_bottom', `assets/oyster_${n}_bottom.webp`));
   });
   C.venues.forEach((v) => { if (v.background) assetJobs.push(loadImg('bg_' + v.id, v.background)); });
+  C.venues.forEach((v) => { if (v.scenes) Object.entries(v.scenes).forEach(([ph, src]) => assetJobs.push(loadImg(`scene_${v.id}_${ph}`, src))); });
 
   // Knife colors: repaint the blade part of the hand sprite once per look.
   const KNIFE = {};
@@ -383,9 +381,7 @@
     SAVE.rep[v.id] = repAfter;
     const nextV = C.venues[C.venues.indexOf(v) + 1];
     const justEarned = repAfter >= C.starsToUnlock && repBefore < C.starsToUnlock && nextV && !SAVE.unlocked.includes(nextV.id);
-    const todFrom = (SAVE.tod || 0) % TOD.length;
-    SAVE.tod = (todFrom + 1) % TOD.length;
-    pendingLapse = { from: todFrom, to: SAVE.tod };
+    pendingLapse = true;
     SAVE.cash += total; SAVE.shifts += 1; SAVE.oysters += G.done; SAVE.cuts += G.cuts;
     const best = total > SAVE.bestShift; if (best) SAVE.bestShift = total;
     writeSave();
@@ -1398,15 +1394,12 @@
   //  TIME OF DAY: Barry's Oysters behind the menus, and a timelapse
   //  crossfade between shifts (sunset -> night -> morning -> day -> ...)
   // =====================================================================
-  const TOD = C.timesOfDay || [
-    { key: 'shack_day',     caption: 'Lunch rush…' },      // the first shift starts here
-    { key: 'shack_sunset',  caption: 'Sunset rush…' },
-    { key: 'shack_night',   caption: 'Night shift…' },
-    { key: 'shack_sunrise', caption: 'Next morning…' },
-  ];
-  let lapse = null;            // { from, to, t }
-  const LAPSE = { hold: 0.5, fade: 1.8, after: 0.7 };
-  const venueHasScene = () => (venue().scenes ?? venue().id === 'shack');
+  const PHASES = ['day', 'sunset', 'night', 'sunrise'];
+  const LAPSE_CAPTIONS = { sunset: 'Closing time…', night: 'Night falls…', sunrise: 'Rise and shine…', day: 'Open for business!' };
+  const LAPSE = { hold: 0.45, step: 1.15, after: 0.8 };   // seconds: first hold, each crossfade step, final hold
+  let lapse = null;            // { t, venueId }
+  const sceneKey = (v, ph) => (v.scenes && v.scenes[ph]) ? `scene_${v.id}_${ph}` : null;
+  const venueHasScene = (v = venue()) => !!sceneKey(v, 'day');
 
   // On tall screens the whole stand is shown, feathered into a blurry copy of itself.
   const SCENE_CACHE = {};
@@ -1427,7 +1420,7 @@
     return (SCENE_CACHE[key] = { im, blur, soft });
   }
   function drawScene(key, alpha = 1, zoom = 1) {
-    const P = sceneParts(key); if (!P) return;
+    const P = key && sceneParts(key); if (!P) return;
     const im = P.im;
     ctx.save(); ctx.globalAlpha = alpha;
     const cover = Math.max(W / im.width, H / im.height) * zoom;
@@ -1436,7 +1429,6 @@
       ctx.drawImage(im, (W - w) / 2, Math.min(0, (H - h) * 0.55), w, h);
     } else {
       const cw = im.width * cover * 1.05, ch = im.height * cover * 1.05;
-      ctx.imageSmoothingEnabled = true;
       ctx.drawImage(P.blur, (W - cw) / 2, (H - ch) / 2, cw, ch);
       const s = Math.max((W * 1.3) / im.width, (H * 0.42) / im.height) * zoom;
       const w = im.width * s, h = im.height * s;
@@ -1447,34 +1439,42 @@
   function drawBackdrop() {
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    if (!venueHasScene()) { draw(); return; }
+    const v = (lapse && C.venues.find((x) => x.id === lapse.venueId)) || venue();
+    if (!venueHasScene(v)) { draw(); return; }
     if (state === 'timelapse' && lapse) {
-      const t = lapse.t, f = Math.max(0, Math.min(1, (t - LAPSE.hold) / LAPSE.fade));
-      const ease = f * f * (3 - 2 * f), zoom = 1 + 0.04 * Math.min(1, t / (LAPSE.hold + LAPSE.fade + LAPSE.after));
-      drawScene(TOD[lapse.from].key, 1, zoom);
-      drawScene(TOD[lapse.to].key, ease, zoom);
-      const k = Math.min(1, Math.max(0, (t - LAPSE.hold * 0.5) / 0.4));
-      ctx.save(); ctx.globalAlpha = k;
-      label(TOD[lapse.to].caption, W / 2, H * 0.16, Math.min(W, H) * 0.09, '#fff3d6', -0.04);
-      label(`Shift #${SAVE.shifts + 1}`, W / 2, H * 0.16 + Math.min(W, H) * 0.09, Math.min(W, H) * 0.05, '#ffd23f');
-      ctx.restore();
+      // day -> sunset -> night -> sunrise -> day
+      const seq = [...PHASES, 'day'];
+      const t = Math.max(0, lapse.t - LAPSE.hold);
+      const i = Math.min(seq.length - 2, Math.floor(t / LAPSE.step));
+      const f = Math.min(1, (t - i * LAPSE.step) / LAPSE.step);
+      const ease = f * f * (3 - 2 * f);
+      const total = LAPSE.hold + LAPSE.step * (seq.length - 1) + LAPSE.after;
+      const zoom = 1 + 0.05 * Math.min(1, lapse.t / total);
+      drawScene(sceneKey(v, seq[i]), 1, zoom);
+      if (lapse.t > LAPSE.hold) drawScene(sceneKey(v, seq[i + 1]), ease, zoom);
+      const showing = lapse.t <= LAPSE.hold ? null : seq[f > 0.35 ? i + 1 : i];
+      if (showing && !(showing === 'day' && i === 0)) {
+        const size = Math.min(W, H);
+        label(LAPSE_CAPTIONS[showing], W / 2, H * 0.15, size * 0.085, '#fff3d6', -0.04);
+        if (showing === 'day') label(`Shift #${SAVE.shifts + 1}`, W / 2, H * 0.15 + size * 0.085, size * 0.05, '#ffd23f');
+      }
     } else {
-      drawScene(TOD[(SAVE.tod || 0) % TOD.length].key, 1, 1);
+      drawScene(sceneKey(v, 'day'), 1, 1);
     }
   }
   function goToShack() {
     M = null;
     if (pendingLapse && venueHasScene()) {
-      lapse = { from: pendingLapse.from, to: pendingLapse.to, t: 0 };
+      lapse = { t: 0, venueId: venue().id };
       pendingLapse = null;
       state = 'timelapse'; showScreen(null);
-      tone(392, 0.5, 'triangle', 0.05, 523); tone(523, 0.6, 'triangle', 0.04, 659, 0.6);
+      tone(392, 0.6, 'triangle', 0.05, 523); tone(523, 0.7, 'triangle', 0.04, 659, 1.2); tone(659, 0.9, 'triangle', 0.05, 784, 3.4);
     } else { pendingLapse = null; openHub('work'); }
   }
   function updateLapse(dt) {
     if (!lapse) return;
     lapse.t += dt;
-    if (lapse.t >= LAPSE.hold + LAPSE.fade + LAPSE.after) { lapse = null; openHub('work'); }
+    if (lapse.t >= LAPSE.hold + LAPSE.step * PHASES.length + LAPSE.after) { lapse = null; openHub('work'); }
   }
 
   // ---------- Loop ----------

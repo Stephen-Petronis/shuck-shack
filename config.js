@@ -12,9 +12,13 @@ window.SHUCK_CONFIG = {
   //   pay:               dollars per oyster for an "OKAY" grade
   //   background:        optional counter art for this place (falls back to the shack counter)
   //   tint:              color wash over the counter so each place feels different
+  //   scenes:            the place from outside at day / sunset / night / sunrise; shown behind the menus
+  //                      and as a timelapse between shifts. Leave out to skip the timelapse.
   venues: [
     { id: 'shack',     name: 'Beach Shack',        cost: 0,    orderMin: 12, orderMax: 12, secsPerOyster: 9,   pay: 3,
-      blurb: 'A cooler, a cutting board and the ocean breeze. Locals want a dozen.', tint: null },
+      blurb: 'A cooler, a cutting board and the ocean breeze. Locals want a dozen.', tint: null,
+      scenes: { day: 'assets/shack_day.webp', sunset: 'assets/shack_sunset.webp',
+                night: 'assets/shack_night.webp', sunrise: 'assets/shack_sunrise.webp' } },
     { id: 'boardwalk', name: 'Boardwalk Raw Bar',  cost: 300,  orderMin: 12, orderMax: 18, secsPerOyster: 7,   pay: 5,
       blurb: 'Tourists, seagulls and a neon sign. Busier, and the tips are better.', tint: '#ffd9b0' },
     { id: 'pier',      name: 'Pier 9 Oyster House', cost: 1200, orderMin: 18, orderMax: 24, secsPerOyster: 5.5, pay: 8,

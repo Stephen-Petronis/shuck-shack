@@ -20,3 +20,6 @@ Each place in `venues` takes an optional `background` (a counter drawing the sam
 ## Mini game: Lemon Toss
 After every shift's receipt you can take a lemon break (or skip it). Your octopus buddy throws lemons up with his eight arms; swipe fast to slice each lemon in half, then slice the halves into quarters. Only quarters score, and quartering a whole lemon earns a bonus. It's just for fun and keeps a best score. Tune it under `lemonToss` in `config.js`, or set `miniGames: false` to turn it off.
 Art: `lemon_beach.webp` (background), `tentacle0-3.webp` (arms), `lemon_whole/half/quarter_a/quarter_b.webp`. Arm sockets and angles are in `SOCKETS` in `game.js`.
+
+## Time of day
+Every shift happens in the daytime. Between shifts a timelapse plays: day → sunset → night → sunrise → day ("Closing time… / Night falls… / Rise and shine… / Open for business!"). Tap to skip. Each restaurant can have its own four scenes under `scenes` in `config.js` (day, sunset, night, sunrise); the Beach Shack uses `shack_*.webp`. A place without scenes skips the timelapse.
