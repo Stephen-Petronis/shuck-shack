@@ -49,6 +49,10 @@
     loadImg('hand', 'assets/hand.webp'),
     loadImg('cuff', 'assets/cuff.webp'),
     loadImg('lemon_beach', 'assets/lemon_beach.webp'),
+    loadImg('shack_sunset', 'assets/shack_sunset.webp'),
+    loadImg('shack_night', 'assets/shack_night.webp'),
+    loadImg('shack_sunrise', 'assets/shack_sunrise.webp'),
+    loadImg('shack_day', 'assets/shack_day.webp'),
     loadImg('lemon_whole', 'assets/lemon_whole.webp'),
     loadImg('lemon_half', 'assets/lemon_half.webp'),
     loadImg('lemon_quarter_a', 'assets/lemon_quarter_a.webp'),
@@ -232,6 +236,7 @@
   let readyT = 0;
   let hubTab = 'work';
   let resetArmed = false;
+  let pendingLapse = null;    // set when a shift ends: the time of day moves on
   const pointer = { x: 0, y: 0, down: false, id: null, tracing: false, lastX: 0, lastY: 0, hover: false, type: 'touch' };
   const fx = { lid: null, stamp: null, popups: [], drops: [], splash: [], shake: 0, ouch: null, wipe: 0 };
   let armTip = { x: 0, y: 0 };
@@ -378,6 +383,9 @@
     SAVE.rep[v.id] = repAfter;
     const nextV = C.venues[C.venues.indexOf(v) + 1];
     const justEarned = repAfter >= C.starsToUnlock && repBefore < C.starsToUnlock && nextV && !SAVE.unlocked.includes(nextV.id);
+    const todFrom = (SAVE.tod || 0) % TOD.length;
+    SAVE.tod = (todFrom + 1) % TOD.length;
+    pendingLapse = { from: todFrom, to: SAVE.tod };
     SAVE.cash += total; SAVE.shifts += 1; SAVE.oysters += G.done; SAVE.cuts += G.cuts;
     const best = total > SAVE.bestShift; if (best) SAVE.bestShift = total;
     writeSave();
@@ -451,6 +459,7 @@
     pointer.id = e.pointerId; pointer.down = true; pointer.type = e.pointerType; pointer.x = p.x; pointer.y = p.y;
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     if (state === 'lemon') { e.preventDefault(); return; }
+    if (state === 'timelapse') { lapse = null; openHub('work'); return; }
     if (state !== 'play' || paused) return;
     if (G.wounds && inNapkin(p.x, p.y, 44)) { tapNapkin(); e.preventDefault(); return; }
     if (G.stun > 0) return;
@@ -669,9 +678,9 @@
   $('btnBackToShack').addEventListener('click', (e) => {
     audio();
     if (e.currentTarget.dataset.next === 'mini') startLemons();
-    else { M = null; openHub('work'); }
+    else goToShack();
   });
-  $('btnSkipMini').addEventListener('click', () => { audio(); M = null; openHub('work'); });
+  $('btnSkipMini').addEventListener('click', () => { audio(); goToShack(); });
   $('btnResume').addEventListener('click', () => setPaused(false));
   $('btnWalkOut').addEventListener('click', () => {
     paused = false;
@@ -1385,11 +1394,96 @@
     skip.hidden = next !== 'mini';
   }
 
+  // =====================================================================
+  //  TIME OF DAY: Barry's Oysters behind the menus, and a timelapse
+  //  crossfade between shifts (sunset -> night -> morning -> day -> ...)
+  // =====================================================================
+  const TOD = C.timesOfDay || [
+    { key: 'shack_day',     caption: 'Lunch rush…' },      // the first shift starts here
+    { key: 'shack_sunset',  caption: 'Sunset rush…' },
+    { key: 'shack_night',   caption: 'Night shift…' },
+    { key: 'shack_sunrise', caption: 'Next morning…' },
+  ];
+  let lapse = null;            // { from, to, t }
+  const LAPSE = { hold: 0.5, fade: 1.8, after: 0.7 };
+  const venueHasScene = () => (venue().scenes ?? venue().id === 'shack');
+
+  // On tall screens the whole stand is shown, feathered into a blurry copy of itself.
+  const SCENE_CACHE = {};
+  function sceneParts(key) {
+    if (SCENE_CACHE[key]) return SCENE_CACHE[key];
+    const im = IMG[key]; if (!im) return null;
+    const tiny = document.createElement('canvas'); tiny.width = 30; tiny.height = 20;
+    tiny.getContext('2d').drawImage(im, 0, 0, 30, 20);
+    const blur = document.createElement('canvas'); blur.width = 240; blur.height = 160;
+    const bx = blur.getContext('2d'); bx.imageSmoothingQuality = 'high'; bx.drawImage(tiny, 0, 0, 240, 160);
+    const soft = document.createElement('canvas'); soft.width = im.width; soft.height = im.height;
+    const sx = soft.getContext('2d'); sx.drawImage(im, 0, 0);
+    sx.globalCompositeOperation = 'destination-in';
+    const gr = sx.createLinearGradient(0, 0, 0, im.height);
+    gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.14, 'rgba(0,0,0,1)');
+    gr.addColorStop(0.86, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    sx.fillStyle = gr; sx.fillRect(0, 0, im.width, im.height);
+    return (SCENE_CACHE[key] = { im, blur, soft });
+  }
+  function drawScene(key, alpha = 1, zoom = 1) {
+    const P = sceneParts(key); if (!P) return;
+    const im = P.im;
+    ctx.save(); ctx.globalAlpha = alpha;
+    const cover = Math.max(W / im.width, H / im.height) * zoom;
+    if (W / H >= 1.2) {
+      const w = im.width * cover, h = im.height * cover;
+      ctx.drawImage(im, (W - w) / 2, Math.min(0, (H - h) * 0.55), w, h);
+    } else {
+      const cw = im.width * cover * 1.05, ch = im.height * cover * 1.05;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(P.blur, (W - cw) / 2, (H - ch) / 2, cw, ch);
+      const s = Math.max((W * 1.3) / im.width, (H * 0.42) / im.height) * zoom;
+      const w = im.width * s, h = im.height * s;
+      ctx.drawImage(P.soft, (W - w) / 2, H * 0.5 - h / 2, w, h);
+    }
+    ctx.restore();
+  }
+  function drawBackdrop() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    if (!venueHasScene()) { draw(); return; }
+    if (state === 'timelapse' && lapse) {
+      const t = lapse.t, f = Math.max(0, Math.min(1, (t - LAPSE.hold) / LAPSE.fade));
+      const ease = f * f * (3 - 2 * f), zoom = 1 + 0.04 * Math.min(1, t / (LAPSE.hold + LAPSE.fade + LAPSE.after));
+      drawScene(TOD[lapse.from].key, 1, zoom);
+      drawScene(TOD[lapse.to].key, ease, zoom);
+      const k = Math.min(1, Math.max(0, (t - LAPSE.hold * 0.5) / 0.4));
+      ctx.save(); ctx.globalAlpha = k;
+      label(TOD[lapse.to].caption, W / 2, H * 0.16, Math.min(W, H) * 0.09, '#fff3d6', -0.04);
+      label(`Shift #${SAVE.shifts + 1}`, W / 2, H * 0.16 + Math.min(W, H) * 0.09, Math.min(W, H) * 0.05, '#ffd23f');
+      ctx.restore();
+    } else {
+      drawScene(TOD[(SAVE.tod || 0) % TOD.length].key, 1, 1);
+    }
+  }
+  function goToShack() {
+    M = null;
+    if (pendingLapse && venueHasScene()) {
+      lapse = { from: pendingLapse.from, to: pendingLapse.to, t: 0 };
+      pendingLapse = null;
+      state = 'timelapse'; showScreen(null);
+      tone(392, 0.5, 'triangle', 0.05, 523); tone(523, 0.6, 'triangle', 0.04, 659, 0.6);
+    } else { pendingLapse = null; openHub('work'); }
+  }
+  function updateLapse(dt) {
+    if (!lapse) return;
+    lapse.t += dt;
+    if (lapse.t >= LAPSE.hold + LAPSE.fade + LAPSE.after) { lapse = null; openHub('work'); }
+  }
+
   // ---------- Loop ----------
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     if (state === 'lemon' || (state === 'result' && M && M.over)) { updateLemons(dt); if (M) drawLemons(); }
+    else if (state === 'timelapse') { T += dt; updateLapse(dt); drawBackdrop(); }
+    else if (state === 'title' || state === 'hub') { update(dt); drawBackdrop(); }
     else { update(dt); draw(); }
     requestAnimationFrame(frame);
   }
