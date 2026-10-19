@@ -1566,15 +1566,21 @@
   // melody strings: space-separated tokens per 16th step; '.' = rest, '-' = hold
   const seq = (s) => s.trim().split(/\s+/);
   const STATIONS = [
-    // Digital dub: heavy Casio-style bass riddim, drum machine, echoing skank and laser zaps.
-    { name: 'Dub Shack Riddim', bpm: 84,
-      chords: [['A3', 'C4', 'E4'], ['A3', 'C4', 'E4'], ['D4', 'F4', 'A4'], ['E4', 'G4', 'B4']],
+    // Funky digital dub: popping octave bass, wah clav chops, swung 16ths, echo and laser zaps.
+    { name: 'Dub Shack Riddim', bpm: 92, swing: 0.2,
+      chords: [['A3', 'C4', 'E4', 'G4'], ['A3', 'C4', 'E4', 'G4'], ['D4', 'F4', 'A4', 'C5'], ['E4', 'G4', 'B4', 'D5']],
       bass: [],
+      // x = ghost note (muted pluck)
       riddim: seq(`
-        A1 -  .  A1   C2 .  A1 .    E2 -  -  D2   C2 .  G1 .
-        A1 -  .  A1   C2 .  A1 .    E2 -  -  D2   C2 .  E2 .
-        D2 -  .  D2   F2 .  D2 .    A2 -  -  G2   F2 .  E2 .
-        E2 -  .  E2   G2 .  E2 .    B1 -  -  D2   E2 .  G1 .`),
+        A1 .  A2 x    .  A1 C2 .    E2 x  G2 A2   .  E2 x  G1
+        A1 .  A2 x    .  A1 C2 .    E2 x  G2 A2   C3 A2 G2 E2
+        D2 .  D3 x    .  D2 F2 .    A2 x  C3 D3   .  A2 x  C2
+        E2 .  E3 x    .  E2 G2 .    B2 x  D3 E3   D3 B2 G2 E2`),
+      clav: seq(`
+        .  .  x  .    x  .  .  x    .  .  x  .    x  .  x  .
+        .  .  x  .    x  .  .  x    .  x  .  .    x  .  .  x
+        .  .  x  .    x  .  .  x    .  .  x  .    x  .  x  .
+        .  .  x  .    x  .  .  x    .  x  .  x    .  x  x  .`),
       lead: seq(`
         .  .  .  .  .  .  .  .    E5 .  .  .  .  .  .  .
         .  .  .  .  A5 .  G5 .    E5 -  -  .  .  .  .  .
@@ -1648,18 +1654,31 @@
     if (st.style === 'dub') {
       if (RADIO.delay) RADIO.delay.delayTime.setValueAtTime(sd * 3, t);              // dotted-eighth echo
       const bt = st.riddim[step % st.riddim.length];
-      if (bt && bt !== '.' && bt !== '-') {
-        let bl = 1; for (let k = step + 1; k < step + 8 && st.riddim[k % st.riddim.length] === '-'; k++) bl++;
-        rNote(a, 'square', hz(N(bt)), t, sd * bl * 0.95, 0.16, 0, 0, 380);           // Casio-ish bass riddim
-        rNote(a, 'sine', hz(N(bt)), t, sd * bl, 0.22);                               // sub weight
+      if (bt === 'x') rNote(a, 'square', hz(chord[0] - 24), t, 0.035, 0.09, 0, 0, 260);   // ghost pluck
+      else if (bt && bt !== '.' && bt !== '-') {
+        const m = N(bt), pop = m >= 45;                                               // high notes "pop" like a slap
+        rNote(a, 'square', hz(m), t, sd * (pop ? 0.7 : 1.4), pop ? 0.13 : 0.16, 0, 0, pop ? 900 : 380);
+        rNote(a, 'sine', hz(m), t, sd * 1.4, 0.2);                                    // sub weight
       }
-      if (s === 4 || s === 12) chord.forEach((m) => rNote(a, 'square', hz(m), t, sd * 0.45, 0.03, 0, 0.6, 1800)); // skank into the echo
-      if (s === 0 || s === 8) kick(a, t, 0.5);
-      if (s === 8) rNote(a, 'square', 1700, t, 0.025, 0.06, 0, 0.7);               // rimshot with echo
-      if (s % 4 === 2) hat(a, t + sd * 0.12, 0.06);                                   // lazy offbeat hats
+      if (st.clav[step % st.clav.length] === 'x') {                                  // wah clav chop
+        chord.forEach((m) => {
+          const o = a.createOscillator(), f = a.createBiquadFilter(), gg = a.createGain();
+          o.type = 'square'; o.frequency.value = hz(m);
+          f.type = 'bandpass'; f.Q.value = 6; f.frequency.setValueAtTime(500, t); f.frequency.exponentialRampToValueAtTime(2600, t + sd * 0.8);
+          gg.gain.setValueAtTime(0.0001, t); gg.gain.linearRampToValueAtTime(0.05, t + 0.004); gg.gain.exponentialRampToValueAtTime(0.0001, t + sd * 0.9);
+          o.connect(f).connect(gg).connect(RADIO.out);
+          if (s % 8 === 4) { const sendG = a.createGain(); sendG.gain.value = 0.35; gg.connect(sendG); sendG.connect(RADIO.echo); }
+          o.start(t); o.stop(t + sd);
+        });
+      }
+      if (s === 0 || s === 6 || s === 10) kick(a, t, s === 0 ? 0.55 : 0.4);          // funky kick pattern
+      if (s === 4 || s === 12) { snare(a, t, 0.24); rNote(a, 'square', 1700, t, 0.02, 0.04, 0, 0.5); }
+      if (s === 7 || s === 15) snare(a, t, 0.05);                                     // ghost snares
+      hat(a, t, s % 4 === 2 ? 0.08 : s % 2 ? 0.025 : 0.045);                          // 16th hats with accents
+      if (s === 14) rNoise(a, t, 0.14, 0.05, 'highpass', 6000);                      // open hat
       if (s === 14 && bar === 3) rNote(a, 'square', 2400, t, sd * 2, 0.05, 160, 0.9);   // laser zap
       if (s === 6 && bar === 1) rNote(a, 'sine', 1800, t, sd * 1.5, 0.05, 300, 0.8);
-      if (lead) rNote(a, 'square', hz(lead), t, sd * held * 0.8, 0.045, 0, 0.55, 3000);
+      if (lead) rNote(a, 'square', hz(lead), t, sd * held * 0.8, 0.04, 0, 0.55, 3000);
     } else if (st.style === 'reggae') {
       if (s === 4 || s === 12) chord.forEach((m) => rNote(a, 'square', hz(m + 12), t, sd * 0.7, 0.035));      // the skank
       if (s === 0 || s === 6) rNote(a, 'triangle', hz(root), t, sd * 3, 0.32);
@@ -1692,7 +1711,7 @@
     const st = STATIONS[RADIO.station], sd = 60 / st.bpm / 4;
     if (RADIO.nextT < a.currentTime) RADIO.nextT = a.currentTime + 0.05;
     while (RADIO.nextT < a.currentTime + 0.15) {
-      if (!muted) radioStep(a, st, RADIO.step, RADIO.nextT, sd);
+      if (!muted) radioStep(a, st, RADIO.step, RADIO.nextT + (RADIO.step % 2 ? sd * (st.swing || 0) : 0), sd);
       RADIO.nextT += sd; RADIO.step = (RADIO.step + 1) % 64;
     }
   }
