@@ -8,12 +8,10 @@ Ideas parked for later. Say "what's next?" and pick from here.
 - Customers waiting at the counter.
 
 ## In the oysters
-- **Pearls** (rare bonus inside an oyster).
-- **Barnacles** on shells.
-- **Pea crabs** hiding inside oysters.
+- Pearls, barnacles and pea crabs: now planned in ROADMAP.md (barnacles are in).
 
 ## More mini games (picked at random after a shift, like Lemon Toss)
-- **Diving for oysters.**
+- **Diving for oysters** (planned for Stage 2, see ROADMAP.md).
 - **Sharpening your knife.**
 - **Shooing away the seagulls.**
 

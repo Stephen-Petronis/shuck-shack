@@ -138,7 +138,7 @@
   }
   const timeMult = () => tier('ice').time ?? 1;
   const cashMult = () => tier('jar').cash ?? 1;
-  const repOf = (id) => SAVE.rep[id] || 0;
+  const repOf = (id) => SAVE.rep[id] ?? ((C.venues.find((v) => v.id === id) || {}).startStars || 0);
   const tolNow = () => L.tol * (tier('knife').grip ?? 1) * (perk('acc', 4) ? 1.1 : 1);
   const gearOpen = (t) => !t.needs || SAVE.unlocked.includes(t.needs);
   const venueName = (id) => (C.venues.find((v) => v.id === id) || {}).name || id;
@@ -249,7 +249,7 @@
   let resetArmed = false;
   let pendingLapse = null;    // set when a shift ends: the time of day moves on
   const pointer = { x: 0, y: 0, down: false, id: null, tracing: false, lastX: 0, lastY: 0, hover: false, type: 'touch' };
-  const fx = { lid: null, stamp: null, popups: [], drops: [], splash: [], shake: 0, ouch: null, wipe: 0 };
+  const fx = { lid: null, stamp: null, popups: [], drops: [], splash: [], flung: [], shake: 0, ouch: null, wipe: 0 };
   let armTip = { x: 0, y: 0 };
   const knife = { x: 0, y: 0 };   // where the blade actually is (lags and wobbles behind your finger)
   let gloveAt = null;              // screen spot of the cut on the glove, for blood drips
@@ -286,10 +286,87 @@
     cur.rot = (Math.random() * 2 - 1) * spinDeg * Math.PI / 180;
     cur.spin = 0;             // shown angle while it slides in
     cur.pts = screenPath(cur);
+    cur.barn = makeBarnacles(cur);
     if (G.done >= C.safeOysters && Math.random() < C.randomCutChance * cutMult()) cur.cutAt = 0.3 + Math.random() * 0.5;
     phase = 'slideIn'; pointer.tracing = false;
     SFX.slide();
   }
+  // Barnacles (Boardwalk and up): spiky lumps sitting on the shell edge. Flick them off
+  // with a fast swipe before tracing; dragging the knife slowly over one cuts you.
+  function makeBarnacles(o) {
+    const B = G.venue.barnacles; if (!B) return [];
+    const n = B[0] + Math.floor(Math.random() * (B[1] - B[0] + 1));
+    const len = o.pts.length, out = [];
+    for (let k = 0; k < n; k++) {
+      const p = o.pts[Math.floor(((k + 0.2 + Math.random() * 0.6) / n) * len) % len];
+      const dx = p.x - L.cx, dy = p.y - L.cy, d = Math.hypot(dx, dy) || 1, pull = L.D * 0.025;
+      out.push({ dx: dx - (dx / d) * pull, dy: dy - (dy / d) * pull, r: L.D * (0.045 + Math.random() * 0.02),
+                 rot: Math.random() * 6.28, alive: true, nextCut: 0 });
+    }
+    return out;
+  }
+  const barnPos = (o, b) => {           // screen position (follows the oyster while it slides and spins in)
+    const a = (o.spin || 0) - (o.rot || 0), c = Math.cos(a), s = Math.sin(a);
+    return { x: o.x + b.dx * c - b.dy * s, y: L.cy + b.dx * s + b.dy * c };
+  };
+  function segDist(x1, y1, x2, y2, cx, cy) {
+    const dx = x2 - x1, dy = y2 - y1, l2 = dx * dx + dy * dy || 1;
+    let t = ((cx - x1) * dx + (cy - y1) * dy) / l2; t = Math.max(0, Math.min(1, t));
+    return Math.hypot(x1 + dx * t - cx, y1 + dy * t - cy);
+  }
+  // returns true when this knife move was a flick (so it shouldn't count as tracing)
+  function barnacleCheck(px, py, nx, ny, dt) {
+    const o = cur; if (!o || !o.barn || !o.barn.length) return false;
+    // flick speed is judged by your finger (the blade lags on cheap knives)
+    const speed = Math.hypot(pointer.x - (pointer.prevX ?? pointer.x), pointer.y - (pointer.prevY ?? pointer.y)) / Math.max(dt, 1e-3);
+    const fast = speed > Math.min(W, H) * (C.flickSpeed ?? 1.4);
+    let flicked = false;
+    const fx0 = pointer.prevX ?? pointer.x, fy0 = pointer.prevY ?? pointer.y;
+    o.barn.forEach((b) => {
+      if (!b.alive) return;
+      const bp = barnPos(o, b);
+      // a fast flick is tested along your finger's path; a slow drag along the blade's
+      const hitFlick = fast && segDist(fx0, fy0, pointer.x, pointer.y, bp.x, bp.y) <= b.r * 1.5;
+      if (!hitFlick && segDist(px, py, nx, ny, bp.x, bp.y) > b.r * 1.25) return;
+      if (hitFlick) {
+        b.alive = false; flicked = true;
+        const ddx = pointer.x - fx0, ddy = pointer.y - fy0, dl = Math.hypot(ddx, ddy) || 1, ux = ddx / dl, uy = ddy / dl;
+        fx.flung.push({ x: bp.x, y: bp.y, vx: ux * L.D * 3.2, vy: uy * L.D * 3.2 - L.D * 1.2, rot: b.rot, vr: 14, r: b.r, t: 0 });
+        fx.popups.push({ text: 'FLICK!', sub: '', x: bp.x, y: bp.y - b.r * 1.5, t: 0.2, small: true, money: true });
+        G.xp.acc += 2; SAVE.flicks = (SAVE.flicks || 0) + 1;
+        tone(1400, 0.06, 'square', 0.06, 2600); noise(0.05, 0.12, 4000);
+      } else if (!fast && T > b.nextCut && G.stun <= 0) {
+        b.nextCut = T + 0.9;
+        fx.popups.push({ text: 'Flick it first!', sub: '', x: bp.x, y: bp.y - b.r * 1.8, t: 0.1, small: true, bad: true });
+        if (Math.random() < Math.min(1, 1.2 * cutMult())) cutHand();
+      }
+    });
+    return flicked;
+  }
+  function drawBarnacle(x, y, r, rot, alpha = 1) {
+    ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.rotate(rot);
+    ctx.lineJoin = 'round';
+    // spikes
+    ctx.fillStyle = '#5b4a6b'; ctx.strokeStyle = '#1d1712'; ctx.lineWidth = Math.max(1.5, r * 0.08);
+    ctx.beginPath();
+    for (let i = 0; i < 22; i++) { const a = (i / 22) * Math.PI * 2, rr = i % 2 ? r * 0.82 : r * 1.32; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    // shell cone
+    const gr = ctx.createRadialGradient(-r * 0.25, -r * 0.3, r * 0.1, 0, 0, r);
+    gr.addColorStop(0, '#f2eadb'); gr.addColorStop(1, '#a89c8c');
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, 0, r * 0.85, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(29,23,18,0.45)'; ctx.lineWidth = Math.max(1, r * 0.05);
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; ctx.beginPath(); ctx.moveTo(Math.cos(a) * r * 0.3, Math.sin(a) * r * 0.3); ctx.lineTo(Math.cos(a) * r * 0.8, Math.sin(a) * r * 0.8); ctx.stroke(); }
+    // opening
+    ctx.fillStyle = '#2b2233'; ctx.strokeStyle = '#1d1712'; ctx.lineWidth = Math.max(1.5, r * 0.08);
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 0.32, r * 0.22, 0.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  function drawBarnacles(o) {
+    if (!o.barn) return;
+    o.barn.forEach((b) => { if (b.alive) { const p = barnPos(o, b); drawBarnacle(p.x, p.y, b.r, b.rot + Math.sin(T * 3 + b.rot) * 0.05); } });
+  }
+
   function screenPath(o) {
     const D = L.D, c = Math.cos(o.rot || 0), s = Math.sin(o.rot || 0);
     return SHAPES[o.shape].map(([px, py]) => {
@@ -339,7 +416,10 @@
       if (Math.random() < C.slipCutChance * cutMult()) { cutHand(); return; }
     }
     if (o.cutAt !== null && progress >= o.cutAt && canCut) { o.cutAt = null; cutHand(); return; }
-    if (progress >= coverageNeeded()) finishOyster();
+    if (progress >= coverageNeeded()) {
+      if (o.barn && o.barn.some((b) => b.alive)) { if (!o.barnWarned) { o.barnWarned = true; fx.popups.push({ text: 'Flick the barnacles off!', sub: '', x: L.cx, y: L.cy - L.D * 0.45, t: 0, bad: true }); } }
+      else finishOyster();
+    }
   }
   function accuracyOf(o) {
     if (!o.n) return 0;
@@ -485,8 +565,8 @@
       pointer.tracing = true;
       cur.engaged = false;   // no slips until the blade has actually reached the line
       // the blade starts where the arm already is and has to catch up to your finger
-      if (Math.hypot(armTip.x - p.x, armTip.y - p.y) > L.D * 0.5) { knife.x = p.x; knife.y = p.y; }
-      else { knife.x = armTip.x; knife.y = armTip.y; }
+      knife.x = p.x; knife.y = p.y; armTip.x = p.x; armTip.y = p.y;
+      pointer.prevX = p.x; pointer.prevY = p.y;
       pointer.lastX = knife.x; pointer.lastY = knife.y;
       if (!cur.startT) cur.startT = T;
     }
@@ -803,7 +883,9 @@
         const wob = ((kt.wobble ?? 0) * (perk('acc', 2) ? 0.5 : 1) + G.wounds * C.woundWobble) * L.D;
         const nx = knife.x + wob * (Math.sin(T * 6.1) + 0.55 * Math.sin(T * 15.7 + 1.3));
         const ny = knife.y + wob * (Math.cos(T * 5.3 + 0.7) + 0.55 * Math.sin(T * 12.9 + 2.1));
-        traceTo(nx, ny);
+        const flicked = barnacleCheck(armTip.x, armTip.y, nx, ny, dt);
+        pointer.prevX = pointer.x; pointer.prevY = pointer.y;
+        if (flicked) { pointer.lastX = nx; pointer.lastY = ny; } else traceTo(nx, ny);
         armTip.x = nx; armTip.y = ny;
       }
 
@@ -848,6 +930,8 @@
     fx.splash.forEach((s) => { s.t += dt; s.vy += L.D * 5 * dt; s.x += s.vx * dt; s.y += s.vy * dt; }); fx.splash = fx.splash.filter((s) => s.t < 0.8);
     fx.drops.forEach((s) => { s.t += dt; if (s.t < 0.6) { s.vy += L.D * 4 * dt; s.x += s.vx * dt; s.y += s.vy * dt; } });
     if (fx.ouch) { fx.ouch.t += dt; if (fx.ouch.t > 1.4) fx.ouch = null; }
+    fx.flung.forEach((f) => { f.t += dt; f.vy += L.D * 6 * dt; f.x += f.vx * dt; f.y += f.vy * dt; f.rot += f.vr * dt; });
+    fx.flung = fx.flung.filter((f) => f.t < 1.2 && f.y < H + 100);
     fx.shake = Math.max(0, fx.shake - dt);
     fx.wipe = Math.max(0, fx.wipe - dt);
 
@@ -978,6 +1062,10 @@
     ctx.restore();
   }
   function drawHint(o) {
+    if (o.barn && o.barn.some((b) => b.alive) && (SAVE.flicks || 0) < 8) {
+      label('Flick the barnacles off fast!', L.cx, L.cy - L.D * 0.58, L.D * 0.075, '#fff3d6');
+      return;
+    }
     if (o.n > 0 || SAVE.oysters + G.done > 1) return;
     const n = o.pts.length, f = (T * 0.35) % 1, i = Math.floor(f * n), p = o.pts[i];
     ctx.save();
@@ -1142,6 +1230,7 @@
         drawOysterImg(cur.shape + '_top', cur.x, L.cy, cur.flip, cur.spin);
         drawEyes(cur.shape, cur.x, L.cy, cur.flip, cur.spin, 1, G.done);
         drawBloodOn(cur);
+        drawBarnacles(cur);
         if (phase === 'trace') { drawGuide(cur); drawTrail(cur); drawHint(cur); }
       } else { drawOysterImg(cur.shape + '_bottom', cur.x, L.cy, cur.flip, cur.spin); drawBloodOn(cur); }
     }
@@ -1150,6 +1239,7 @@
       ctx.save(); ctx.globalAlpha = 1 - s.t / 0.8; ctx.fillStyle = '#d8eef6'; ctx.strokeStyle = 'rgba(40,70,90,0.6)'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
     });
+    fx.flung.forEach((f) => drawBarnacle(f.x, f.y, f.r, f.rot, Math.max(0, 1 - f.t / 1.2)));
     if (fx.lid) {
       drawOysterImg(fx.lid.shape + '_top', fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5);
       drawEyes(fx.lid.shape, fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5, 9);
@@ -1749,7 +1839,8 @@
   }
 
   // Read-only peek for debugging in the console.
-  window.__shuck = { get oyster() { return cur && { shape: cur.shape, flip: cur.flip, pts: cur.pts, phase }; },
+  window.__shuck = { get oyster() { return cur && { shape: cur.shape, flip: cur.flip, pts: cur.pts, phase,
+                       barn: (cur.barn || []).map((b) => Object.assign(barnPos(cur, b), { alive: b.alive, r: b.r })) }; },
                      get shift() { return G; }, get save() { return SAVE; }, get lemons() { return M; } };
 
   window.addEventListener('resize', layout);

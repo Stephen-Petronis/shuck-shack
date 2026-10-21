@@ -12,20 +12,22 @@ window.SHUCK_CONFIG = {
   //   pay:               dollars per oyster for an "OKAY" grade
   //   background:        optional counter art for this place (falls back to the shack counter)
   //   tint:              color wash over the counter so each place feels different
+  //   barnacles:         [min, max] barnacles per oyster that must be flicked off first
+  //   startStars:        reputation you start with there
   //   scenes:            the place from outside at day / sunset / night / sunrise; shown behind the menus
   //                      and as a timelapse between shifts. Leave out to skip the timelapse.
   venues: [
-    { id: 'shack',     name: 'Beach Shack',        cost: 0,    orderMin: 12, orderMax: 12, secsPerOyster: 9,   pay: 3,
+    { id: 'shack',     name: 'Beach Shack',        cost: 0,    startStars: 1,    orderMin: 12, orderMax: 12, secsPerOyster: 9,   pay: 3,
       blurb: 'A cooler, a cutting board and the ocean breeze. Locals want a dozen.', tint: null,
       scenes: { day: 'assets/shack_day.webp', sunset: 'assets/shack_sunset.webp',
                 night: 'assets/shack_night.webp', sunrise: 'assets/shack_sunrise.webp' } },
-    { id: 'boardwalk', name: 'Boardwalk Raw Bar',  cost: 300,  orderMin: 12, orderMax: 18, secsPerOyster: 7,   pay: 5,
-      blurb: 'Tourists, seagulls and a neon sign. Busier, and the tips are better.', tint: '#ffd9b0' },
-    { id: 'pier',      name: 'Pier 9 Oyster House', cost: 1200, orderMin: 18, orderMax: 24, secsPerOyster: 5.5, pay: 8,
+    { id: 'boardwalk', name: 'Boardwalk Raw Bar',  cost: 200,  barnacles: [2, 3],  orderMin: 12, orderMax: 18, secsPerOyster: 7,   pay: 5,
+      blurb: 'Not the freshest oysters. Flick the barnacles off before you shuck, or ouch.', tint: '#ffd9b0' },
+    { id: 'pier',      name: 'Pier 9 Oyster House', cost: 1200, barnacles: [2, 4], orderMin: 18, orderMax: 24, secsPerOyster: 5.5, pay: 8,
       blurb: 'A real restaurant with real tables. Two dozen at a time.', tint: '#cfe3ff' },
-    { id: 'downtown',  name: 'Downtown Oyster Bar', cost: 3500, orderMin: 24, orderMax: 36, secsPerOyster: 4.5, pay: 12,
+    { id: 'downtown',  name: 'Downtown Oyster Bar', cost: 3500, barnacles: [3, 5], orderMin: 24, orderMax: 36, secsPerOyster: 4.5, pay: 12,
       blurb: 'After-work crowd, big platters, no patience.', tint: '#e6d2ff' },
-    { id: 'palace',    name: 'The Pearl Palace',    cost: 9000, orderMin: 36, orderMax: 48, secsPerOyster: 3.6, pay: 18,
+    { id: 'palace',    name: 'The Pearl Palace',    cost: 9000, barnacles: [3, 5], orderMin: 36, orderMax: 48, secsPerOyster: 3.6, pay: 18,
       blurb: 'Chandeliers and fancy hats. Four dozen, perfect, right now.', tint: '#ffe7a0' },
   ],
 
@@ -112,6 +114,7 @@ window.SHUCK_CONFIG = {
   randomCutChance: 0.05,       // chance per oyster of a random slip (before knife and glove)
   slipCutChance: 0.55,         // chance each time the knife wanders far off the line
   slipDistance: 2.4,           // "far off" = this many tolerances away
+  flickSpeed: 1.4,             // how fast a swipe must be to flick a barnacle (screen sizes per second)
   slipCooldown: 0.6,           // seconds between slip checks
   cutStun: 0.6,                // seconds you can't shuck after a cut
   woundWobble: 0.012,          // extra knife shake per open cut
@@ -121,12 +124,12 @@ window.SHUCK_CONFIG = {
   // ---------------- Skills ----------------
   // Each tree fills from its own kind of play. A full bar lets you learn that tree's next perk.
   skills: {
-    costs: [80, 200, 400, 700],          // XP for perk 1, 2, 3, 4 in every tree
+    costs: [160, 400, 800, 1400],          // XP for perk 1, 2, 3, 4 in every tree
     xp: { accPerOyster: 10,              // times accuracy (0..1)
           spdFast: 8, spdOk: 4, spdSlow: 1,   // per oyster: under par / under 1.5x par / slower
           bldPerCut: 25, bldPerBloody: 5,
           lemonPerQuartered: 3 },        // Lemon Toss gives Speed XP
-    levelXp: 120,                        // overall player level: every this much total XP (grows a little each level)
+    levelXp: 250,                        // overall player level: every this much total XP (grows a little each level)
     trees: [
       { id: 'acc', name: 'Accuracy', color: '#4fc3e8', how: 'Earn it with clean, close traces.', perks: [
         { name: 'Sharp Eye',   desc: 'Oysters pop after tracing 85% of the shell.' },
@@ -152,10 +155,10 @@ window.SHUCK_CONFIG = {
   // ---------------- Mini games (between shifts, just for fun) ----------------
   miniGames: true,             // offer a mini game after every shift
   lemonToss: {
-    duration: 40,              // seconds of lemon throwing
+    duration: 15,              // seconds of lemon throwing
     introTime: 1.6,
-    startEvery: 1.5,           // seconds between throws at the start...
-    endEvery: 0.6,             // ...and at the end
+    startEvery: 0.9,           // seconds between throws at the start...
+    endEvery: 0.45,            // ...and at the end
     sliceSpeed: 1.1,           // how fast the blade must move to slice (screen sizes per second)
     pointsPerQuarter: 10,
     fullLemonBonus: 30,        // all four quarters of one lemon
