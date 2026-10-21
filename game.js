@@ -716,6 +716,10 @@
           ${right}
         </div>`;
       }).join('');
+      const nextLocked = C.venues.find((v) => !SAVE.unlocked.includes(v.id));
+      if ((C.levelSkipper ?? true) && nextLocked) {
+        h += `<button class="linkbtn skipper" type="button" data-act="skip">Level skipper: jump to ${nextLocked.name}</button>`;
+      }
     }
     els.hubBody.innerHTML = h;
   }
@@ -801,6 +805,13 @@
       SAVE.xp[id] -= perkCost(id); SAVE.perks[id] += 1; writeSave(); SFX.buy();
       const t = SK.trees.find((x) => x.id === id); flash(`Learned ${t.perks[SAVE.perks[id] - 1].name}!`);
       renderHub(); return;
+    }
+    if (act === 'skip') {   // level skipper (testing): open the next restaurant for free and go there
+      const ni = C.venues.findIndex((v) => !SAVE.unlocked.includes(v.id)); if (ni < 1) return;
+      const nv = C.venues[ni];
+      SAVE.rep[C.venues[ni - 1].id] = Math.max(repOf(C.venues[ni - 1].id), C.starsToUnlock);
+      SAVE.unlocked.push(nv.id); SAVE.venue = nv.id; writeSave(); SFX.buy();
+      flash(`Skipped ahead to ${nv.name}`); hubTab = 'work'; renderHub(); return;
     }
     if (act === 'move') { SAVE.venue = id; writeSave(); SFX.slide(); hubTab = 'work'; renderHub(); }
   });
