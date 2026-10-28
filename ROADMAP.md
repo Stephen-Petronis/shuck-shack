@@ -129,6 +129,14 @@ Oysters have to come from somewhere, and that's the choice between shifts:
 - The radio is a little drawn boombox now (speakers thump and notes float when it's on). Later upgrades swap the drawing:
   boombox → Walkman → made-up player → Bluetooth speaker.
 
+## Promotions — DONE (first pass)
+- Work tab: pick a promotion (Flyers / Radio Ad / Billboard / TV Spot), paid every shift. Bigger crowd = every one of the
+  12 oysters stands for more customers (pay + tips multiply), but the clock shrinks. More customers squeeze lemons faster.
+
+## Story: Act 2 — organized oyster crime (Stephen's idea) — TODO
+- Once the core loop is solid, the game swerves into story. Somewhere in Act 2 Barry gets tangled up with organized
+  oyster crime and has to go on a weird mission with his supplier. Each mission = its own mini game.
+
 ## The whole raw bar (long-term)
 - Lemons and oysters at the same time: one finger slicing lemons, one shucking.
 - Then add shrimp cocktail, cherrystone clams, and more, until by the end you run a whole raw bar at once.

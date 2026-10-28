@@ -271,6 +271,17 @@ window.SHUCK_CONFIG = {
     ],
   },
 
+  // ---------------- Promotions ----------------
+  // Picked on the Work tab, paid every shift. cost = restaurant pay x 12 x this.
+  // crowd multiplies pay + tips; time multiplies the shift clock (same dozen, less time).
+  promos: [
+    { id: 'none',      name: 'No promo',  cost: 0,    crowd: 1,   time: 1 },
+    { id: 'flyers',    name: 'Flyers',    cost: 0.25, crowd: 1.5, time: 0.85 },
+    { id: 'radio',     name: 'Radio Ad',  cost: 0.6,  crowd: 2,   time: 0.72, needs: 'boardwalk' },
+    { id: 'billboard', name: 'Billboard', cost: 1.2,  crowd: 3,   time: 0.6,  needs: 'pier' },
+    { id: 'tv',        name: 'TV Spot',   cost: 2.0,  crowd: 4,   time: 0.5,  needs: 'downtown' },
+  ],
+
   // ---------------- Ice ----------------
   iceFrom: 'boardwalk',        // ice starts melting during shifts from this restaurant on
   iceMelt: [0, 0.1, 0.14, 0.18, 0.22],   // bags of ice melted per second, per restaurant

@@ -309,14 +309,26 @@
     const sizes = []; for (let n = v.orderMin; n <= v.orderMax; n += 6) sizes.push(n);
     return sizes[(Math.random() * sizes.length) | 0];
   }
+  // Promotions: pay up front for a bigger crowd. Every oyster now stands for more customers
+  // (pay and tips x crowd), but the same dozen has to go out faster.
+  const promoOf = () => (C.promos || []).find((p) => p.id === SAVE.promo) || (C.promos || [{ id: 'none', crowd: 1, time: 1, cost: 0 }])[0];
+  const promoCost = (p, v = venue()) => Math.round(v.pay * 12 * (p.cost || 0));
+  const promoOpen = (p) => !p.needs || SAVE.unlocked.includes(p.needs);
   function startShift() {
     const v = venue();
     const need = pickOrderSize(v);
+    let pr = promoOf();
+    if (!promoOpen(pr) || (promoCost(pr, v) > SAVE.cash && !SAVE.infiniteCash)) { if (pr.id !== 'none') flash(`Can't afford ${pr.name}: no promotion this shift`); pr = C.promos[0]; }
+    const prCost = promoCost(pr, v);
+    if (prCost) { SAVE.cash -= prCost; keepInfinite(); writeSave(); }
     G = { venue: v, need, done: 0, clockMax: shiftClock(need, v), clock: 0, par: v.secsPerOyster * C.parFactor * (perk('spd', 4) ? 1.3 : 1), xp: { acc: 0, spd: 0, bld: 0 },
           pay: 0, tips: 0, accSum: 0, cuts: 0, served: 0, bandages: [], fast: 0,
           wounds: 0, tapsDone: 0, stun: 0, lastSlip: -9, dripT: 0, drips: [], splats: [], bloody: 0, bloodLoss: 0,
           bill: 0, fromSupplier: 0, own: 0, ownBig: 0, lemonTips: 0, lemoned: 0, noLemon: 0, flyLemons: [], lemonCd: 0, lemonsCut: 0, streaks: [], swipeUntil: 0, rsp: 0 };
+    G.promo = pr; G.promoCost = prCost; G.crowd = pr.crowd || 1;
+    G.clockMax = Math.round(G.clockMax * (pr.time || 1)); G.par *= (pr.time || 1);
     G.clock = G.clockMax;
+    hudLabels([G.crowd > 1 ? `Crowd x${G.crowd}` : 'Working at', 'Shucked', 'Earned']);
     fx.lid = null; fx.stamp = null; fx.popups = []; fx.drops = []; fx.splash = []; hurt = null; cur = null;
     state = 'play'; phase = 'ready'; readyT = T; paused = false;
     showScreen(null); updateHud(); updateClock();
@@ -514,6 +526,10 @@
       else if (G.venue.lemonRequired) { pay = Math.max(1, Math.round(pay * 0.5)); G.noLemon++; lemonNote = 'no lemon? half pay'; }
       if (iceNeeded() && !SAVE.ice) { pay = Math.max(1, Math.round(pay * (C.iceWarmPay ?? 0.75))); G.warm = (G.warm || 0) + 1; lemonNote = [lemonNote, 'warm oyster'].filter(Boolean).join(', '); }
     }
+    if (G.crowd > 1 && !bloody) {   // a bigger crowd: every oyster feeds more customers
+      pay = Math.round(pay * G.crowd); tip = Math.round(tip * G.crowd);
+      const extra = Math.round(lemonTip * (G.crowd - 1)); G.lemonTips += extra; lemonTip += extra;
+    }
     G.pay += pay; G.tips += tip; if (tip) G.fast++;
     G.done += 1; G.accSum += acc;
 
@@ -571,7 +587,9 @@
       </div>
       <div class="receipt">
         ${row(`Oysters (${G.done})`, money(G.pay))}
+        ${G.crowd > 1 ? row(`Crowd x${G.crowd} (${G.promo.name})`, 'pay + tips x' + G.crowd) : ''}
         ${row(`Speedy tips (${G.fast})`, money(G.tips))}
+
         ${G.lemoned ? row(`Lemon tips (${G.lemoned})`, money(G.lemonTips)) : ''}
         ${G.lemonsUsed ? row('Lemon wedges squeezed', G.lemonsUsed) : ''}
         ${G.iceUsed ? row('Ice melted', `${G.iceUsed} bag${G.iceUsed === 1 ? '' : 's'}`) : ''}
@@ -588,6 +606,7 @@
       ${justEarned ? `<p class="nudge">5 stars! ${nextV.name} is ready to open for ${money(nextV.cost)}.</p>` : ''}
       <p class="fine">${G.cuts ? `Cut yourself ${G.cuts === 1 ? 'once' : G.cuts + ' times'}.` : 'No cuts!'}${best ? ' New best shift!' : ''}</p>
       ${xpBlock(G.xp, lvAfter > lvBefore ? lvAfter : 0, readyNow.length > readyBefore ? readyNow : [])}
+      ${G.promoCost ? `<p class="fine"><b>${G.promo.name}</b> cost ${money(G.promoCost)} before the shift. After the ad you ${total - G.promoCost >= 0 ? 'made' : 'lost'} <b>${money(Math.abs(total - G.promoCost))}</b>.</p>` : ''}
       <p class="fine">Lemons left: ${SAVE.lemons} · Oysters in the cooler: ${stockCount()}${SAVE.stock.big ? ` (${SAVE.stock.big} big)` : ''}${G.noLemon ? ` · ${G.noLemon} served without lemon` : ''}</p>
       <div class="cashline"><span>Cash</span><strong>${money(SAVE.cash)}</strong></div>
       ${next && SAVE.cash >= next.cost ? `<p class="nudge">You can afford the ${next.name} now.</p>` : ''}`;
@@ -693,7 +712,7 @@
     const v = venue(), i = C.venues.indexOf(v);
     const base = v.lemonDrain ?? (C.lemonDrain || [0.18, 0.24, 0.32, 0.42, 0.55])[Math.min(i, 4)];
     const prog = G ? Math.min(1, G.done / Math.max(1, G.need)) : 0;
-    return base * (1 + (C.lemonRush ?? 0.6) * prog);
+    return base * (1 + (C.lemonRush ?? 0.6) * prog) * (G ? Math.sqrt(G.crowd || 1) : 1);   // more customers, more lemons
   }
   function drainLemons(dt) {
     if (!SAVE.lemons) return;
@@ -909,6 +928,13 @@
           <div><span>Ice</span><b>${SAVE.ice || 0} bag${SAVE.ice === 1 ? '' : 's'}${iceNeeded() ? (SAVE.ice ? '' : ' (need some!)') : ' (not needed yet)'}</b></div>
           <div class="wide"><span>Supplier price</span><b>${money(oysterPrice(v))} per oyster · your own catch is free</b></div>
         </div>
+        <h3 class="sec">Promotion <span>Pay up front: bigger crowd, bigger pay, less time</span></h3>
+        <div class="promos">${(C.promos || []).map((p) => {
+          const open = promoOpen(p), on = (SAVE.promo || 'none') === p.id, cost = promoCost(p, v);
+          return `<button type="button" class="promo${on ? ' on' : ''}" data-act="promo" data-id="${p.id}" ${open ? '' : 'disabled'}>
+            <b>${p.name}</b>${open ? `<span>${p.crowd > 1 ? `Crowd x${p.crowd} · ${Math.round(shiftClock(12, v) * p.time)}s` : `Normal · ${shiftClock(12, v)}s`}</span><em>${cost ? money(cost) + '/shift' : 'free'}</em>`
+              : `<span>Opens at ${venueName(p.needs)}</span>`}</button>`;
+        }).join('')}</div>
         <p class="fine stats">${SAVE.oysters.toLocaleString()} oyster${SAVE.oysters === 1 ? '' : 's'} shucked · best shift ${money(SAVE.bestShift)}</p>
         <button class="linkbtn" type="button" data-act="reset">${resetArmed ? 'Tap again to wipe your save' : 'Start over'}</button>`;
     } else if (hubTab === 'skills') {
@@ -1061,6 +1087,7 @@
       SAVE = freshSave(); resetArmed = false; hubTab = 'work'; renderHub(); flash('Fresh start at the Beach Shack');
       return;
     }
+    if (act === 'promo') { const p = (C.promos || []).find((x) => x.id === id); if (!p || !promoOpen(p)) return; SAVE.promo = id; writeSave(); SFX.slide(); renderHub(); return; }
     if (act === 'equip') { if (!SAVE.knives.includes(id)) return; SAVE.knife = id; writeSave(); SFX.slide(); flash(`Using the ${knifeDef(id).name}`); renderHub(); return; }
     if (act === 'buyknife') {
       const k = knifeDef(id); if (!k || SAVE.knives.includes(id) || !knifeTierOpen(k)) return;
