@@ -114,8 +114,19 @@ Oysters have to come from somewhere, and that's the choice between shifts:
   - Lemons: lemon crate (wedge cap), octopus stamina (longer Lemon Toss), octopus buddy (faster in-shift throws).
   - Diving: flippers, lungs, flipper bag, dive grip.
 
-## Franchise mode (Stephen's idea) — TODO
-- Run 2, then 4, then 6 shucking windows at once. Everything gets smaller and harder; tap a window to zoom in.
+## Barry's Franchise: Challenge mode (Stephen's idea) — TODO
+- Unlocks after you finish the story. You open your own Barry's franchise.
+- The challenge: always 30 seconds, shuck as many as you can. That's THE high score of the game.
+- You can still upgrade your shop and play the prep mini games between runs to push the score up.
+- Maybe name your restaurant (careful with free-text names in a kids' game: a pick-list of funny names may be safer).
+- Later: run 2, then 4, then 6 shucking windows at once. Everything gets smaller and harder; tap a window to zoom in.
+
+## Orders — DONE
+- Every order is a dozen oysters at every restaurant. Fancier places give you less time and pay more per oyster.
+
+## Radio — boombox icon DONE
+- The radio is a little drawn boombox now (speakers thump and notes float when it's on). Later upgrades swap the drawing:
+  boombox → Walkman → made-up player → Bluetooth speaker.
 
 ## The whole raw bar (long-term)
 - Lemons and oysters at the same time: one finger slicing lemons, one shucking.

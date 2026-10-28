@@ -61,6 +61,19 @@
     color: var(--cream); background: rgba(29, 23, 18, 0.78); border: 2px solid rgba(255, 243, 214, 0.5);
     border-radius: 999px; padding: 9px 12px; cursor: pointer;
   }
+  .radio-ico { position: relative; background: none; border: 0; padding: 2px; cursor: pointer; line-height: 0; filter: drop-shadow(0 2px 0 rgba(0,0,0,.35)); align-self: center; }
+  .radio-ico svg { display: block; transform: rotate(-6deg); transition: transform .15s; }
+  .radio-ico:active svg { transform: rotate(-6deg) scale(.9); }
+  .radio-ico:not([aria-pressed="true"]) svg { filter: saturate(.35) brightness(.9); }
+  .radio-ico[aria-pressed="true"] .spk { animation: thump .45s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .radio-ico[aria-pressed="true"] .led { fill: #5cff6a; }
+  .radio-ico .notes { position: absolute; left: 50%; top: -4px; pointer-events: none; }
+  .radio-ico .notes i { position: absolute; font-style: normal; font-size: 15px; line-height: 1; color: #ffd23f; text-shadow: 0 1px 0 #2a1408, 1px 0 0 #2a1408, -1px 0 0 #2a1408, 0 -1px 0 #2a1408; opacity: 0; }
+  .radio-ico[aria-pressed="true"] .notes i { animation: note 1.6s linear infinite; }
+  .radio-ico[aria-pressed="true"] .notes i + i { animation-delay: .8s; }
+  @keyframes thump { 50% { transform: scale(1.12); } }
+  @keyframes note { 0% { opacity: 0; transform: translate(-4px, 6px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(14px, -22px) rotate(20deg); } }
+  @media (prefers-reduced-motion: reduce) { .radio-ico .spk, .radio-ico .notes i { animation: none !important; } }
   .chip:focus-visible, .btn:focus-visible { outline: 3px solid var(--mustard); outline-offset: 3px; }
 
   /* Order tickets */
@@ -276,7 +289,18 @@
   </header>
 
   <div class="hud-btns">
-    <button class="chip" id="btnRadio" type="button" aria-pressed="false" hidden>Radio: off</button>
+    <button class="radio-ico" id="btnRadio" type="button" aria-pressed="false" aria-label="Radio: off" title="Radio" hidden>
+      <svg viewBox="0 0 64 48" width="52" height="39" aria-hidden="true">
+        <path d="M20 12 Q32 2 44 12" fill="none" stroke="#2a1408" stroke-width="3.5" stroke-linecap="round"/>
+        <rect x="4" y="12" width="56" height="32" rx="7" fill="#e8553f" stroke="#2a1408" stroke-width="3"/>
+        <rect x="8" y="15" width="48" height="5" rx="2" fill="#ffd23f" stroke="#2a1408" stroke-width="1.5"/>
+        <g class="spk"><circle cx="17" cy="31" r="8.5" fill="#3a2a20" stroke="#2a1408" stroke-width="2.5"/><circle cx="17" cy="31" r="3.5" fill="#8a7a6a"/></g>
+        <g class="spk"><circle cx="47" cy="31" r="8.5" fill="#3a2a20" stroke="#2a1408" stroke-width="2.5"/><circle cx="47" cy="31" r="3.5" fill="#8a7a6a"/></g>
+        <rect x="27" y="25" width="10" height="12" rx="2" fill="#fff3d6" stroke="#2a1408" stroke-width="2"/>
+        <circle class="led" cx="32" cy="40.5" r="1.8" fill="#6b5a4a"/>
+      </svg>
+      <span class="notes" aria-hidden="true"><i>&#9834;</i><i>&#9835;</i></span>
+    </button>
     <button class="chip" id="btnMute" type="button" aria-pressed="false">Sound on</button>
     <button class="chip" id="btnPause" type="button" hidden>Pause</button>
   </div>

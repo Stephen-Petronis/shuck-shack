@@ -9,7 +9,7 @@ window.SHUCK_CONFIG = {
   levelSkipper: true,          // shows "Level skipper" in the Move up tab (for testing); set false to hide
 
   // Restaurants, in order. Each shift is one order. Moving up costs cash.
-  //   orderMin/orderMax: oysters per order (picked in steps of 6)
+  //   orderMin/orderMax: oysters per order. Always a dozen now: fancier places just give you less time
   //   secsPerOyster:     clock you get per oyster (before the ice bin)
   //   pay:               dollars per oyster for an "OKAY" grade
   //   background:        optional counter art for this place (falls back to the shack counter)
@@ -25,13 +25,13 @@ window.SHUCK_CONFIG = {
       blurb: 'A cooler, a cutting board and the ocean breeze. Locals want a dozen.', tint: null,
       scenes: { day: 'assets/shack_day.webp', sunset: 'assets/shack_sunset.webp',
                 night: 'assets/shack_night.webp', sunrise: 'assets/shack_sunrise.webp' } },
-    { id: 'boardwalk', name: 'Boardwalk Raw Bar',  cost: 200,  barnacles: [2, 3],  orderMin: 12, orderMax: 18, secsPerOyster: 7,   pay: 5,
+    { id: 'boardwalk', name: 'Boardwalk Raw Bar',  cost: 200,  barnacles: [2, 3],  orderMin: 12, orderMax: 12, secsPerOyster: 7,   pay: 6,
       blurb: 'Not the freshest oysters. Flick the barnacles off before you shuck, or ouch.', tint: '#ffd9b0' },
-    { id: 'pier', lemonRequired: true, lemonButton: true,      name: 'Pier 9 Oyster House', cost: 1200, barnacles: [2, 4], orderMin: 18, orderMax: 24, secsPerOyster: 5.5, pay: 8,
+    { id: 'pier', lemonRequired: true, lemonButton: true,      name: 'Pier 9 Oyster House', cost: 1200, barnacles: [2, 4], orderMin: 12, orderMax: 12, secsPerOyster: 5.5, pay: 11,
       blurb: 'A real restaurant with real tables. Two dozen at a time.', tint: '#cfe3ff' },
-    { id: 'downtown', lemonRequired: true, lemonButton: true,  name: 'Downtown Oyster Bar', cost: 3500, barnacles: [3, 5], orderMin: 24, orderMax: 36, secsPerOyster: 4.5, pay: 12,
+    { id: 'downtown', lemonRequired: true, lemonButton: true,  name: 'Downtown Oyster Bar', cost: 3500, barnacles: [3, 5], orderMin: 12, orderMax: 12, secsPerOyster: 4.5, pay: 18,
       blurb: 'After-work crowd, big platters, no patience.', tint: '#e6d2ff' },
-    { id: 'palace', lemonRequired: true, lemonButton: true,    name: 'The Pearl Palace',    cost: 9000, barnacles: [3, 5], orderMin: 36, orderMax: 48, secsPerOyster: 3.6, pay: 18,
+    { id: 'palace', lemonRequired: true, lemonButton: true,    name: 'The Pearl Palace',    cost: 9000, barnacles: [3, 5], orderMin: 12, orderMax: 12, secsPerOyster: 3.6, pay: 28,
       blurb: 'Chandeliers and fancy hats. Four dozen, perfect, right now.', tint: '#ffe7a0' },
   ],
 

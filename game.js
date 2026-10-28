@@ -2225,14 +2225,15 @@
     const b = $('btnRadio'); if (!b) return;
     const owned = (SAVE.owned.radio || 0) >= 1;
     b.hidden = !owned;
-    b.textContent = RADIO.on ? `Radio: ${STATIONS[RADIO.station].name}` : 'Radio: off';
+    const name = RADIO.on ? `Radio: ${STATIONS[RADIO.station].name}` : 'Radio: off';
+    b.setAttribute('aria-label', name); b.title = name;
     b.setAttribute('aria-pressed', String(RADIO.on));
   }
   $('btnRadio').addEventListener('click', () => {
     audio();
     const next = RADIO.on ? (RADIO.station + 1 < STATIONS.length ? RADIO.station + 1 : -1) : 0;
     setRadio(next);
-    if (next >= 0) flash(`Now playing: ${STATIONS[next].name}`);
+    flash(next >= 0 ? `Now playing: ${STATIONS[next].name}` : 'Radio off');
   });
 
   // =====================================================================
