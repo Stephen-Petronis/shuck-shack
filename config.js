@@ -37,22 +37,8 @@ window.SHUCK_CONFIG = {
   //   taps:  napkin taps to bandage up
   //   time:  multiplies the shift clock
   //   cash:  multiplies everything you earn in a shift
-  //   look:  knife color (rust, steel, blue, gold)
-  //   wobble: how much the knife shakes (fraction of oyster size)
-  //   lag:   how far the knife drags behind your finger (seconds)
-  //   grip:  how forgiving the trace line is (multiplies traceTolerance)
   //   needs: a restaurant you must have opened before you can buy this
   gear: [
-    { id: 'knife', name: 'Knife', tiers: [
-      { name: 'Rusty Knife',      cost: 0,    cut: 1.0,  look: 'rust',  wobble: 0.035, lag: 0.12,  grip: 0.8,
-        desc: 'Wobbly, dull and slow. Slips a lot.' },
-      { name: 'Steel Shucker',    cost: 60,   cut: 0.7,  look: 'steel', wobble: 0.02,  lag: 0.07,  grip: 0.92,
-        desc: 'Steadier and quicker. Cuts 30% less often.' },
-      { name: 'Pro Boston Knife', cost: 260,  cut: 0.45, look: 'blue',  wobble: 0.009, lag: 0.035, grip: 1.05, needs: 'boardwalk',
-        desc: 'Smooth and fast. Cuts about half as often.' },
-      { name: 'Golden Shucker',   cost: 1500, cut: 0.25, look: 'gold',  wobble: 0.002, lag: 0.01,  grip: 1.15, needs: 'pier',
-        desc: 'Glides like butter. Hardly ever slips.' },
-    ] },
     { id: 'glove', name: 'Glove', tiers: [
       { name: 'Cotton Glove',     cost: 0,    cut: 1.0,  desc: 'Better than nothing. Barely.' },
       { name: 'Rubber Glove',     cost: 90,   cut: 0.75, desc: 'Cuts 25% less often.' },
@@ -78,6 +64,59 @@ window.SHUCK_CONFIG = {
       { name: 'Glass Jar',        cost: 120,  cash: 1.2,  desc: '20% more cash every shift.' },
       { name: 'Giant Fishbowl',   cost: 900,  cash: 1.5,  needs: 'pier', desc: '50% more cash every shift.' },
     ] },
+  ],
+
+  // ---------------- Knives ----------------
+  // Every knife has six stats from 0 to 5. Higher tiers have more points to spread around,
+  // so each knife is good at something and you pick the one that fits the job.
+  //   steady:  less shake overall (a 5 barely shakes, even moving fast)
+  //   control: how fast you can move before the shake kicks in
+  //   quick:   how closely the blade keeps up with your finger (less drag)
+  //   grip:    how forgiving the trace line is
+  //   flick:   how easy barnacles are to flick off (slower swipes count, bigger reach)
+  //   safe:    how rarely you cut yourself
+  // Tier points: tier 1 = 4, tier 2 = 6, tier 3 = 8.  needs: a restaurant that must be open first.
+  knifeTiers: [
+    { name: 'Starter', points: 1 },
+    { name: 'Tier 1', points: 4 },
+    { name: 'Tier 2', points: 6, needs: 'boardwalk' },
+    { name: 'Tier 3', points: 8, needs: 'pier' },
+  ],
+  knives: [
+    { id: 'rusty',     tier: 0, cost: 0,    look: 'rust',   name: 'Rusty Knife',      stats: { flick: 1 },
+      desc: 'Wobbly, dull and slow. It came with the shack.' },
+    { id: 'steel',     tier: 1, cost: 60,   look: 'steel',  name: 'Steel Shucker',    stats: { steady: 1, control: 1, quick: 1, grip: 1 },
+      desc: 'A little better at everything.' },
+    { id: 'buster',    tier: 1, cost: 70,   look: 'red',    name: 'Barnacle Buster',  stats: { flick: 3, quick: 1 },
+      desc: 'Barnacles fly off with a lazy swipe. Still shaky.' },
+    { id: 'reliable',  tier: 1, cost: 70,   look: 'black',  name: 'Old Reliable',     stats: { steady: 2, safe: 2 },
+      desc: 'Steady and safe, as long as you take your time.' },
+    { id: 'boston',    tier: 2, cost: 260,  look: 'blue',   name: 'Pro Boston Knife', stats: { steady: 2, control: 1, quick: 2, grip: 1 },
+      desc: 'The all-rounder real shuckers use.' },
+    { id: 'surgeon',   tier: 2, cost: 300,  look: 'teal',   name: 'The Surgeon',      stats: { steady: 3, grip: 3 },
+      desc: 'Pinpoint traces. Drags behind a fast finger.' },
+    { id: 'speedster', tier: 2, cost: 300,  look: 'copper', name: 'Speedster',        stats: { control: 3, quick: 3 },
+      desc: 'Built for going fast. Hard to be precise.' },
+    { id: 'flicker',   tier: 2, cost: 280,  look: 'green',  name: 'Flick Master',     stats: { flick: 4, quick: 1, safe: 1 },
+      desc: 'Barnacles? What barnacles?' },
+    { id: 'golden',    tier: 3, cost: 1500, look: 'gold',   name: 'Golden Shucker',   stats: { steady: 2, control: 2, quick: 2, grip: 1, safe: 1 },
+      desc: 'Shiny and great at everything.' },
+    { id: 'scalpel',   tier: 3, cost: 1600, look: 'teal',   name: 'The Scalpel',      stats: { steady: 4, grip: 4 },
+      desc: 'Perfect lines, every time. Slow and draggy.' },
+    { id: 'lightning', tier: 3, cost: 1600, look: 'blue',   name: 'Lightning',        stats: { quick: 4, control: 4 },
+      desc: 'Zero drag, zero shake at full speed. Line is strict.' },
+    { id: 'flickking', tier: 3, cost: 1500, look: 'green',  name: 'Flick King',       stats: { flick: 5, quick: 2, safe: 1 },
+      desc: 'Barnacles leave on their own when they see it.' },
+  ],
+
+  // ---------------- Suppliers ----------------
+  // Bought separately at each restaurant. Better oysters: fewer barnacles and they sell for more.
+  // cost = that restaurant's pay x costMult
+  suppliers: [
+    { name: 'Bucket off the Dock', barnacles: 0,  pay: 1.0,  costMult: 0,   desc: 'Whatever washed up.' },
+    { name: 'Local Fisherman',     barnacles: -1, pay: 1.1,  costMult: 25,  desc: 'Fewer barnacles. Oysters sell for 10% more.' },
+    { name: 'Oyster Farm',         barnacles: -2, pay: 1.2,  costMult: 70,  desc: 'Clean shells. Oysters sell for 20% more.' },
+    { name: 'Premium Farm',        barnacles: -3, pay: 1.35, costMult: 160, desc: 'Spotless and famous. Oysters sell for 35% more.' },
   ],
 
   // Money
@@ -125,12 +164,12 @@ window.SHUCK_CONFIG = {
   // ---------------- Skills ----------------
   // Each tree fills from its own kind of play. A full bar lets you learn that tree's next perk.
   skills: {
-    costs: [160, 400, 800, 1400],          // XP for perk 1, 2, 3, 4 in every tree
+    costs: [250, 600, 1200, 2000],          // XP for perk 1, 2, 3, 4 in every tree
     xp: { accPerOyster: 10,              // times accuracy (0..1)
           spdFast: 8, spdOk: 4, spdSlow: 1,   // per oyster: under par / under 1.5x par / slower
           bldPerCut: 25, bldPerBloody: 5,
           lemonPerQuartered: 3 },        // Lemon Toss gives Speed XP
-    levelXp: 250,                        // overall player level: every this much total XP (grows a little each level)
+    levelXp: 400,                        // overall player level: every this much total XP (grows a little each level)
     trees: [
       { id: 'acc', name: 'Accuracy', color: '#4fc3e8', how: 'Earn it with clean, close traces.', perks: [
         { name: 'Sharp Eye',   desc: 'Oysters pop after tracing 85% of the shell.' },

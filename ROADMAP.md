@@ -33,5 +33,20 @@ and each restaurant teaches one new thing before the next one stacks on top.
 - Boombox → Walkman → a made-up music player → Bluetooth speaker. Each upgrade unlocks more stations.
   Stephen will bring new music ideas.
 
+## Knives — DONE (first pass)
+- 12 knives across Starter / Tier 1 (4 pts) / Tier 2 (6 pts) / Tier 3 (8 pts). Six stats: Steady, Control,
+  Quick, Grip, Flick, Safe. Wobble now depends on how fast you move; good knives stay calm at speed.
+  Pick which knife to use in Gear.
+- TODO: special knife skills at higher tiers; more knives.
+
+## Suppliers — DONE (first pass)
+- Each restaurant has its own supplier to upgrade: fewer barnacles and oysters sell for more.
+- TODO: new, harder oyster shapes from better (or weirder) suppliers.
+
+## The whole raw bar (long-term)
+- Lemons and oysters at the same time: one finger slicing lemons, one shucking.
+- Then add shrimp cocktail, cherrystone clams, and more, until by the end you run a whole raw bar at once.
+
 ## Tuning notes
-- Leveling slowed down: perk costs 160 / 400 / 800 / 1400 XP, player level every 250 XP (growing).
+- Leveling slowed down again: perk costs 250 / 600 / 1200 / 2000 XP, player level every 400 XP (growing).
+- Barnacles ramp in: one per oyster at first, one more every 6 barnacle oysters, up to the restaurant's max.

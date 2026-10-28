@@ -18,7 +18,8 @@
   // ---------- DOM ----------
   const $ = (id) => document.getElementById(id);
   const canvas = $('game');
-  const ctx = canvas.getContext('2d');
+  let ctx = canvas.getContext('2d');
+  const ctxSwap = (c2) => { ctx = c2; };
   const hud = $('hud');
   const els = {
     venue: $('hudVenue'), count: $('hudCount'), earned: $('hudEarned'),
@@ -80,6 +81,11 @@
       blue:  (l) => [l * 0.62, l * 0.82, l * 1.12],
       gold:  (l) => [l * 1.15 + 30, l * 0.9 + 10, l * 0.28],
       rust:  (l, x, y) => { const spot = ((x * 7 + y * 13) % 23 < 6) ? 0.72 : 1; return [l * 0.95 * spot + 20, l * 0.62 * spot, l * 0.38 * spot]; },
+      red:    (l) => [l * 1.1 + 30, l * 0.35, l * 0.3],
+      black:  (l) => [l * 0.42, l * 0.42, l * 0.48],
+      teal:   (l) => [l * 0.45, l * 0.95, l * 0.92],
+      copper: (l) => [l * 1.05 + 10, l * 0.62, l * 0.35],
+      green:  (l) => [l * 0.5, l * 1.0, l * 0.45],
     };
     Object.entries(looks).forEach(([name, fn]) => {
       const c = document.createElement('canvas'); c.width = h.width; c.height = h.height;
@@ -108,13 +114,16 @@
     const owned = {}; C.gear.forEach((g) => { owned[g.id] = 0; });
     return { cash: C.startCash || 0, owned, venue: C.venues[0].id, unlocked: [C.venues[0].id],
              shifts: 0, oysters: 0, bestShift: 0, cuts: 0, rep: {},
-             xp: { acc: 0, spd: 0, bld: 0 }, perks: { acc: 0, spd: 0, bld: 0 }, xpTotal: 0, radio: 0 };
+             xp: { acc: 0, spd: 0, bld: 0 }, perks: { acc: 0, spd: 0, bld: 0 }, xpTotal: 0, radio: 0,
+             knives: ['rusty'], knife: 'rusty', supplier: {}, barnOysters: 0 };
   }
   function loadSave() {
     try {
       const s = JSON.parse(localStorage.getItem(SAVE_KEY));
       if (s && s.owned) { const f = freshSave(); return Object.assign(f, s, { owned: Object.assign(f.owned, s.owned), rep: Object.assign({}, s.rep),
-        xp: Object.assign(f.xp, s.xp), perks: Object.assign(f.perks, s.perks) }); }
+        xp: Object.assign(f.xp, s.xp), perks: Object.assign(f.perks, s.perks), supplier: Object.assign({}, s.supplier),
+        knives: s.knives || ['rusty', 'steel', 'boston', 'golden'].slice(0, (s.owned && s.owned.knife || 0) + 1),
+        knife: s.knife || ['rusty', 'steel', 'boston', 'golden'][Math.min(3, (s.owned && s.owned.knife) || 0)] }); }
     } catch (e) { /* no save yet or storage blocked */ }
     return freshSave();
   }
@@ -123,9 +132,30 @@
   const gearDef = (id) => C.gear.find((g) => g.id === id);
   const tier = (id) => { const g = gearDef(id); return g.tiers[Math.min(SAVE.owned[id] || 0, g.tiers.length - 1)]; };
   const venue = () => C.venues.find((v) => v.id === SAVE.venue) || C.venues[0];
+  // ---- knives: six stats (0..5) turned into how the blade behaves ----
+  const KNIFE_STATS = ['steady', 'control', 'quick', 'grip', 'flick', 'safe'];
+  const KNIFE_LABEL = { steady: 'Steady', control: 'Control', quick: 'Quick', grip: 'Grip', flick: 'Flick', safe: 'Safe' };
+  const knifeDef = (id = SAVE.knife) => C.knives.find((k) => k.id === id) || C.knives[0];
+  function knifeStats(id) {
+    const k = knifeDef(id), s = Object.assign({ steady: 0, control: 0, quick: 0, grip: 0, flick: 0, safe: 0 }, k.stats);
+    return {
+      name: k.name, look: k.look,
+      wobble: 0.03 * (1 - 0.17 * s.steady),           // shake at full speed (fraction of oyster size)
+      idle: Math.max(0, 0.55 - 0.13 * s.steady),      // how much shake is left when you move slowly
+      ctrl: 0.45 + 0.3 * s.control,                   // finger speed (screens/sec) where shake is at full
+      lag: Math.max(0.008, 0.12 - 0.022 * s.quick),   // seconds the blade drags behind your finger
+      grip: 0.8 + 0.07 * s.grip,                      // trace-line forgiveness
+      flickSpeed: Math.max(0.55, 1.7 - 0.2 * s.flick),// swipe speed that flicks a barnacle
+      flickReach: 1 + 0.12 * s.flick,
+      cut: Math.max(0.3, 1 - 0.14 * s.safe),
+    };
+  }
+  const knifeTierOpen = (k) => { const t = C.knifeTiers[k.tier]; return !t.needs || SAVE.unlocked.includes(t.needs); };
+  const supplierLv = (vid = venue().id) => (SAVE.supplier && SAVE.supplier[vid]) || 0;
+  const supplierOf = (vid) => C.suppliers[supplierLv(vid)] || C.suppliers[0];
   const SK = C.skills;
   const perk = (tree, n) => (SAVE.perks[tree] || 0) >= n;
-  const cutMult = () => (tier('knife').cut ?? 1) * (tier('glove').cut ?? 1) * (perk('bld', 2) ? 0.6 : 1);
+  const cutMult = () => knifeStats().cut * (tier('glove').cut ?? 1) * (perk('bld', 2) ? 0.6 : 1);
   const napkinTaps = () => { const t = tier('aid').taps ?? 3; return perk('bld', 1) ? Math.max(1, Math.ceil(t / 2)) : t; };
   const coverageNeeded = () => perk('acc', 3) ? 0.75 : perk('acc', 1) ? 0.85 : C.coverageToFinish;
   const moveMult = () => perk('spd', 3) ? 0.35 : perk('spd', 1) ? 0.65 : 1;
@@ -139,7 +169,7 @@
   const timeMult = () => tier('ice').time ?? 1;
   const cashMult = () => tier('jar').cash ?? 1;
   const repOf = (id) => SAVE.rep[id] ?? ((C.venues.find((v) => v.id === id) || {}).startStars || 0);
-  const tolNow = () => L.tol * (tier('knife').grip ?? 1) * (perk('acc', 4) ? 1.1 : 1);
+  const tolNow = () => L.tol * knifeStats().grip * (perk('acc', 4) ? 1.1 : 1);
   const gearOpen = (t) => !t.needs || SAVE.unlocked.includes(t.needs);
   const venueName = (id) => (C.venues.find((v) => v.id === id) || {}).name || id;
   const starsText = (n, of = 5) => { let s = ''; for (let i = 1; i <= of; i++) s += `<i class="st ${n >= i ? 'f' : n >= i - 0.5 ? 'h' : 'e'}">★</i>`; return s; };
@@ -287,6 +317,10 @@
     cur.spin = 0;             // shown angle while it slides in
     cur.pts = screenPath(cur);
     cur.barn = makeBarnacles(cur);
+    if (cur.barn.length && !SAVE.barnTut) {
+      SAVE.barnTut = true; writeSave();
+      showTip('Barnacles!', 'These spiky barnacles will cut your fingers. Swipe fast across each one to flick it off, then trace the shell like always.', drawTipBarnacle);
+    }
     if (G.done >= C.safeOysters && Math.random() < C.randomCutChance * cutMult()) cur.cutAt = 0.3 + Math.random() * 0.5;
     phase = 'slideIn'; pointer.tracing = false;
     SFX.slide();
@@ -295,7 +329,10 @@
   // with a fast swipe before tracing; dragging the knife slowly over one cuts you.
   function makeBarnacles(o) {
     const B = G.venue.barnacles; if (!B) return [];
-    const n = B[0] + Math.floor(Math.random() * (B[1] - B[0] + 1));
+    let n = B[0] + Math.floor(Math.random() * (B[1] - B[0] + 1)) + (supplierOf(G.venue.id).barnacles || 0);
+    n = Math.min(n, 1 + Math.floor((SAVE.barnOysters || 0) / (C.barnacleRampEvery ?? 6)));   // start with one, add more as you learn
+    if (n <= 0) return [];
+    SAVE.barnOysters = (SAVE.barnOysters || 0) + 1;
     const len = o.pts.length, out = [];
     for (let k = 0; k < n; k++) {
       const p = o.pts[Math.floor(((k + 0.2 + Math.random() * 0.6) / n) * len) % len];
@@ -319,14 +356,15 @@
     const o = cur; if (!o || !o.barn || !o.barn.length) return false;
     // flick speed is judged by your finger (the blade lags on cheap knives)
     const speed = Math.hypot(pointer.x - (pointer.prevX ?? pointer.x), pointer.y - (pointer.prevY ?? pointer.y)) / Math.max(dt, 1e-3);
-    const fast = speed > Math.min(W, H) * (C.flickSpeed ?? 1.4);
+    const ks = knifeStats();
+    const fast = speed > Math.min(W, H) * ks.flickSpeed;
     let flicked = false;
     const fx0 = pointer.prevX ?? pointer.x, fy0 = pointer.prevY ?? pointer.y;
     o.barn.forEach((b) => {
       if (!b.alive) return;
       const bp = barnPos(o, b);
       // a fast flick is tested along your finger's path; a slow drag along the blade's
-      const hitFlick = fast && segDist(fx0, fy0, pointer.x, pointer.y, bp.x, bp.y) <= b.r * 1.5;
+      const hitFlick = fast && segDist(fx0, fy0, pointer.x, pointer.y, bp.x, bp.y) <= b.r * 1.5 * ks.flickReach;
       if (!hitFlick && segDist(px, py, nx, ny, bp.x, bp.y) > b.r * 1.25) return;
       if (hitFlick) {
         b.alive = false; flicked = true;
@@ -437,7 +475,7 @@
     let rank = C.grades.findIndex((g) => acc >= g.minAccuracy); if (rank < 0) rank = C.grades.length - 1;
     const grade = C.grades[rank];
     const bloody = o.blood.length > 0;
-    let pay = Math.max(1, Math.round(G.venue.pay * (C.gradePay[rank] ?? 1) * (perk('acc', 4) && rank <= 1 ? 1.25 : 1)));
+    let pay = Math.max(1, Math.round(G.venue.pay * (supplierOf(G.venue.id).pay || 1) * (C.gradePay[rank] ?? 1) * (perk('acc', 4) && rank <= 1 ? 1.25 : 1)));
     let tip = secs <= G.par ? Math.max(1, Math.round(G.venue.pay * C.speedTipFactor * (perk('spd', 4) ? 2 : 1))) : 0;
     G.xp.acc += Math.round(acc * SK.xp.accPerOyster);
     G.xp.spd += secs <= G.par ? SK.xp.spdFast : secs <= G.par * 1.5 ? SK.xp.spdOk : SK.xp.spdSlow;
@@ -589,6 +627,10 @@
     els.hub.hidden = which !== 'hub';
     els.result.hidden = which !== 'result';
     els.pause.hidden = which !== 'pause';
+    $('screenTip').hidden = which !== 'tip';
+    document.body.classList.toggle('in-hub', which === 'hub');
+    const dockBtn = document.querySelector('#hubDock .btn');
+    if (dockBtn) dockBtn.textContent = SAVE.shifts ? 'Back to work!' : 'Start your first shift!';
     els.btnPause.hidden = !(state === 'play' || state === 'lemon');
     document.body.classList.toggle('on-shift', state === 'play' || state === 'lemon');
     const focusBtn = { title: 'btnStart', result: 'btnBackToShack', pause: 'btnResume' }[which];
@@ -625,6 +667,7 @@
       const i = SAVE.owned[g.id] || 0; const t = g.tiers[i + 1];
       if (t && gearOpen(t) && (!best || t.cost < best.cost)) best = t;
     });
+    C.knives.forEach((k) => { if (!SAVE.knives.includes(k.id) && knifeTierOpen(k) && (!best || k.cost < best.cost)) best = k; });
     const ni = C.venues.findIndex((v) => !SAVE.unlocked.includes(v.id));
     const nv = C.venues[ni];
     if (nv && repOf(C.venues[ni - 1].id) >= C.starsToUnlock && (!best || nv.cost < best.cost)) best = { name: nv.name, cost: nv.cost };
@@ -667,15 +710,43 @@
           <div><span>Clock</span><b>${shiftClock(v.orderMin, v)}s${v.orderMin !== v.orderMax ? '+' : ''}</b></div>
           <div><span>Pay</span><b>${money(v.pay)} each</b></div>
           <div><span>Cut risk</span><b class="risk ${rc}">${risk}</b></div>
-          <div class="wide"><span>Your knife</span><b>${tier('knife').name} · ${knifeFeel()}</b></div>
+          <div class="wide"><span>Your knife</span><b>${knifeDef().name} · ${knifeFeel()}</b></div>
         </div>
-        <button class="btn" type="button" data-act="shift">Start shift</button>
         <p class="fine stats">${SAVE.oysters.toLocaleString()} oyster${SAVE.oysters === 1 ? '' : 's'} shucked · best shift ${money(SAVE.bestShift)}</p>
         <button class="linkbtn" type="button" data-act="reset">${resetArmed ? 'Tap again to wipe your save' : 'Start over'}</button>`;
     } else if (hubTab === 'skills') {
       h = skillsHTML();
     } else if (hubTab === 'gear') {
-      h = C.gear.map((g) => {
+      const pipRow = (n) => { let o = ''; for (let i = 1; i <= 5; i++) o += `<i class="${i <= n ? 'on' : ''}"></i>`; return o; };
+      const knivesHtml = C.knives.map((k) => {
+        const owned = SAVE.knives.includes(k.id), using = SAVE.knife === k.id, open = knifeTierOpen(k), tt = C.knifeTiers[k.tier];
+        const s = Object.assign({ steady: 0, control: 0, quick: 0, grip: 0, flick: 0, safe: 0 }, k.stats);
+        const right = using ? '<span class="here">Using</span>'
+          : owned ? `<button class="buy go" type="button" data-act="equip" data-id="${k.id}">Use</button>`
+          : !open ? `<span class="locked">Opens at<br>${venueName(tt.needs)}</span>`
+          : `<button class="buy" type="button" data-act="buyknife" data-id="${k.id}" ${SAVE.cash < k.cost ? 'data-short="1"' : ''}>${money(k.cost)}</button>`;
+        return `<div class="item knife ${using ? 'is-here' : ''} ${!open && !owned ? 'dim' : ''}">
+          ${KNIFE_URL[k.look] ? `<img class="knife-pic" src="${KNIFE_URL[k.look]}" alt="">` : ''}
+          <div class="item-txt">
+            <div class="item-head"><span class="cat">${tt.name}${tt.points ? ` · ${tt.points} pts` : ''}</span></div>
+            <b>${k.name}</b><p>${k.desc}</p>
+          </div>
+          ${right}
+          <div class="kstats">${KNIFE_STATS.map((st) => `<span><em>${KNIFE_LABEL[st]}</em><i class="kp">${pipRow(s[st])}</i></span>`).join('')}</div>
+        </div>`;
+      }).join('');
+      const v = venue(), sl = supplierLv(v.id), sCur = C.suppliers[sl], sNext = C.suppliers[sl + 1];
+      const sCost = sNext ? v.pay * sNext.costMult : 0;
+      const supplierHtml = `<div class="item">
+          <div class="item-txt">
+            <div class="item-head"><span class="cat">Supplier · ${v.name}</span><span class="pips">${C.suppliers.map((_, k) => `<i class="${k <= sl ? 'on' : ''}"></i>`).join('')}</span></div>
+            <b>${sNext ? sNext.name : sCur.name}</b>
+            <p>${sNext ? sNext.desc : sCur.desc}</p>
+            <p class="have">${sNext ? `You have: ${sCur.name}. Each restaurant has its own supplier.` : 'The best oysters money can buy'}</p>
+          </div>
+          ${sNext ? `<button class="buy" type="button" data-act="supplier" ${SAVE.cash < sCost ? 'data-short="1"' : ''}>${money(sCost)}</button>` : '<span class="maxed">Maxed</span>'}
+        </div>`;
+      h = `<h3 class="sec">Knives <span>Pick the one that fits the job</span></h3>${knivesHtml}<h3 class="sec">Supplies</h3>${supplierHtml}` + C.gear.map((g) => {
         const i = SAVE.owned[g.id] || 0, curT = g.tiers[i], next = g.tiers[i + 1];
         const pic = g.id === 'knife' && KNIFE_URL[(next || curT).look] ? `<img class="knife-pic" src="${KNIFE_URL[(next || curT).look]}" alt="">` : '';
         const pips = g.tiers.map((_, k) => `<i class="${k <= i ? 'on' : ''}"></i>`).join('');
@@ -753,8 +824,8 @@
   }
 
   function knifeFeel() {
-    const w = tier('knife').wobble ?? 0;
-    return w > 0.03 ? 'wobbly' : w > 0.015 ? 'steady-ish' : w > 0.005 ? 'smooth' : 'perfect';
+    const k = knifeStats(), w = k.wobble * (0.5 + k.idle);
+    return w > 0.022 ? 'wobbly' : w > 0.012 ? 'steady-ish' : w > 0.005 ? 'smooth' : 'rock steady';
   }
   function repBlock(v) {
     const n = repOf(v.id), next = C.venues[C.venues.indexOf(v) + 1];
@@ -784,6 +855,20 @@
       try { localStorage.removeItem(SAVE_KEY); } catch (err) { /* ignore */ }
       SAVE = freshSave(); resetArmed = false; hubTab = 'work'; renderHub(); flash('Fresh start at the Beach Shack');
       return;
+    }
+    if (act === 'equip') { if (!SAVE.knives.includes(id)) return; SAVE.knife = id; writeSave(); SFX.slide(); flash(`Using the ${knifeDef(id).name}`); renderHub(); return; }
+    if (act === 'buyknife') {
+      const k = knifeDef(id); if (!k || SAVE.knives.includes(id) || !knifeTierOpen(k)) return;
+      if (SAVE.cash < k.cost) { SFX.nope(); flash(`Need ${money(k.cost - SAVE.cash)} more`, true); return; }
+      SAVE.cash -= k.cost; SAVE.knives.push(id); SAVE.knife = id; writeSave(); SFX.buy(); flash(`Got the ${k.name}!`);
+      renderHub(); return;
+    }
+    if (act === 'supplier') {
+      const v = venue(), sl = supplierLv(v.id), nx = C.suppliers[sl + 1]; if (!nx) return;
+      const cost = v.pay * nx.costMult;
+      if (SAVE.cash < cost) { SFX.nope(); flash(`Need ${money(cost - SAVE.cash)} more`, true); return; }
+      SAVE.cash -= cost; SAVE.supplier[v.id] = sl + 1; writeSave(); SFX.buy(); flash(`New supplier: ${nx.name}!`);
+      renderHub(); return;
     }
     if (act === 'buy') {
       const g = gearDef(id), i = SAVE.owned[id] || 0, next = g.tiers[i + 1]; if (!next || !gearOpen(next)) return;
@@ -815,6 +900,30 @@
     }
     if (act === 'move') { SAVE.venue = id; writeSave(); SFX.slide(); hubTab = 'work'; renderHub(); }
   });
+
+  // ---- one-time "new thing!" tips that pause the shift ----
+  let tipWasPaused = false;
+  function showTip(title, text, art) {
+    tipWasPaused = paused; paused = true; pointer.tracing = false;
+    $('tipTitle').textContent = title; $('tipText').textContent = text;
+    const cv = $('tipArt'), x = cv.getContext('2d');
+    const dpr = Math.min(window.devicePixelRatio || 1, 2); cv.width = 260 * dpr; cv.height = 130 * dpr;
+    x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, 260, 130);
+    if (art) art(x);
+    showScreen('tip');
+  }
+  function drawTipBarnacle(x) {
+    drawBarnacleOn(x, 130, 66, 30);
+    x.save(); x.lineCap = 'round'; x.lineJoin = 'round';
+    for (const [col, w] of [['#2a1408', 12], ['#ffd23f', 7]]) {
+      x.strokeStyle = col; x.lineWidth = w;
+      x.beginPath(); x.moveTo(60, 112); x.lineTo(200, 22); x.stroke();
+      x.beginPath(); x.moveTo(178, 22); x.lineTo(200, 22); x.lineTo(193, 43); x.stroke();
+    }
+    x.restore();
+  }
+  function drawBarnacleOn(c2, x, y, r) { const real = ctx; ctxSwap(c2); try { drawBarnacle(x, y, r, 0.3); } finally { ctxSwap(real); } }
+  $('btnTipOk').addEventListener('click', () => { paused = tipWasPaused; showScreen(paused ? 'pause' : null); });
 
   function setPaused(p) {
     if (state !== 'play' && state !== 'lemon') return;
@@ -888,10 +997,15 @@
 
       // the blade follows your finger with some drag and shake (better knives = less)
       if (pointer.tracing && phase === 'trace' && G.stun <= 0) {
-        const kt = tier('knife');
-        const lagK = 1 - Math.exp(-dt / Math.max(0.004, (kt.lag ?? 0.01) * (perk('spd', 2) ? 0.5 : 1)));
+        const kt = knifeStats();
+        const lagK = 1 - Math.exp(-dt / Math.max(0.004, kt.lag * (perk('spd', 2) ? 0.5 : 1)));
         knife.x += (pointer.x - knife.x) * lagK; knife.y += (pointer.y - knife.y) * lagK;
-        const wob = ((kt.wobble ?? 0) * (perk('acc', 2) ? 0.5 : 1) + G.wounds * C.woundWobble) * L.D;
+        // shake grows with how fast you move; good knives stay calm until you go really fast
+        const fsp = Math.hypot(pointer.x - (pointer.wx ?? pointer.x), pointer.y - (pointer.wy ?? pointer.y)) / Math.max(dt, 1e-3);
+        pointer.wx = pointer.x; pointer.wy = pointer.y;
+        G.fsp = (G.fsp || 0) + (fsp - (G.fsp || 0)) * Math.min(1, dt * 8);
+        const speedF = kt.idle + (1 - kt.idle) * Math.min(2.2, G.fsp / (kt.ctrl * Math.min(W, H)));
+        const wob = (kt.wobble * speedF * (perk('acc', 2) ? 0.5 : 1) + G.wounds * C.woundWobble) * L.D;
         const nx = knife.x + wob * (Math.sin(T * 6.1) + 0.55 * Math.sin(T * 15.7 + 1.3));
         const ny = knife.y + wob * (Math.cos(T * 5.3 + 0.7) + 0.55 * Math.sin(T * 12.9 + 2.1));
         const flicked = barnacleCheck(armTip.x, armTip.y, nx, ny, dt);
@@ -1072,9 +1186,26 @@
     }
     ctx.restore();
   }
+  function drawFlickArrow(x, y, sc = 1) {
+    const D = L.D * sc, ax = x - D * 0.2, ay = y + D * 0.14, bx = x + D * 0.2, by = y - D * 0.14;
+    const k = (T * 1.4) % 1;
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const [col, w] of [['#2a1408', D * 0.05], ['#ffd23f', D * 0.03]]) {
+      ctx.strokeStyle = col; ctx.lineWidth = w;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      const ang = Math.atan2(by - ay, bx - ax), hl = D * 0.08;
+      ctx.beginPath(); ctx.moveTo(bx - Math.cos(ang - 0.5) * hl, by - Math.sin(ang - 0.5) * hl); ctx.lineTo(bx, by);
+      ctx.lineTo(bx - Math.cos(ang + 0.5) * hl, by - Math.sin(ang + 0.5) * hl); ctx.stroke();
+    }
+    // a "finger" zipping along the arrow
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(ax + (bx - ax) * k, ay + (by - ay) * k, D * 0.035, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
   function drawHint(o) {
     if (o.barn && o.barn.some((b) => b.alive) && (SAVE.flicks || 0) < 8) {
-      label('Flick the barnacles off fast!', L.cx, L.cy - L.D * 0.58, L.D * 0.075, '#fff3d6');
+      label('Swipe fast across the barnacles!', L.cx, L.cy - L.D * 0.58, L.D * 0.07, '#fff3d6');
+      if ((SAVE.flicks || 0) < 4) { const b = o.barn.find((x) => x.alive), p = barnPos(o, b); drawFlickArrow(p.x, p.y); }
       return;
     }
     if (o.n > 0 || SAVE.oysters + G.done > 1) return;
@@ -1128,7 +1259,7 @@
     });
   }
   function drawArm() {
-    const knifeLook = tier('knife').look || 'steel';
+    const knifeLook = knifeStats().look || 'steel';
     const hand = KNIFE[knifeLook] || IMG.hand, cuff = IMG.cuff; if (!hand || !cuff) return;
     const s = L.armScale, Cs = L.cuffOpen, tip = armTip;
     const v0x = ARM.hand.tip[0] - ARM.hand.wrist[0], v0y = ARM.hand.tip[1] - ARM.hand.wrist[1];
@@ -1423,7 +1554,7 @@
     if (!M) return;
     M.t += dt;
     // knife follows the finger (better knives feel snappier)
-    const lag = (tier('knife').lag ?? 0.05) * 0.5 * (perk('spd', 2) ? 0.5 : 1);
+    const lag = knifeStats().lag * 0.5 * (perk('spd', 2) ? 0.5 : 1);
     const k = 1 - Math.exp(-dt / Math.max(0.004, lag));
     const tx = pointer.down ? pointer.x : L.rest.x + Math.sin(T * 1.6) * 8;
     const ty = pointer.down ? pointer.y : L.rest.y + Math.sin(T * 2.3) * 10;
