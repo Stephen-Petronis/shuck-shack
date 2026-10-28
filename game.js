@@ -250,6 +250,11 @@
     ox = Math.min(0, Math.max(W - BG.w * s, ox));
     oy = Math.min(0, Math.max(H - BG.h * s, oy));
     L.bg = { s, ox, oy };
+    // the background gets clamped to the screen edges, so put the oyster on the board's real center
+    L.cx = ox + BG.boardCx * s;
+    L.cy = oy + BG.boardCy * s;
+    const room = Math.min(L.cy - top - 8, H - 12 - L.cy, L.cx, W - L.cx) * 2 / 1.25;
+    if (room > 120 && L.D > room) { L.D = room; L.tol = Math.max(C.minTolerancePx, L.D * C.traceTolerance); }
 
     const n = BG.napkin;
     const nx = ox + n.x * s, ny = oy + n.y * s, nw = n.w * s, nh = n.h * s;
@@ -1558,7 +1563,7 @@
       drawOysterImg(fx.lid.shape + '_top', fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5);
       drawEyes(fx.lid.shape, fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5, 9);
     }
-    if (state === 'play') { drawFly(); drawOcto(); }
+    if (state === 'play') { drawFly(); if (venue().lemonButton) drawOcto(); }
     drawArm();
     if (state === 'play' && phase === 'ready' && !paused) drawOrderUp();
     drawStamp();
