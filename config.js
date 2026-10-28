@@ -232,6 +232,20 @@ window.SHUCK_CONFIG = {
     ],
   },
 
+  // ---------------- Ice ----------------
+  iceFrom: 'boardwalk',        // ice starts melting during shifts from this restaurant on
+  iceMelt: [0, 0.1, 0.14, 0.18, 0.22],   // bags of ice melted per second, per restaurant
+  iceWarmPay: 0.75,            // pay for a warm oyster (no ice) = normal pay x this
+  iceCap: 50,                  // most ice bags you can keep
+  iceHarpoon: {
+    harpoons: 3,
+    rows: 11, cols: 9,         // size of the iceberg grid
+    minChunks: 45, maxChunks: 75,   // how big a berg can be
+    solid: 0.5,                // chance two touching chunks are strongly joined
+    cracked: 0.2,              // chance they're joined by a CRACKED line (breaks along with a hit)
+    sway: 0.35,                // how much Barry's aim wobbles (x chunk size)
+  },
+
   // ---------------- Barry's Dive ----------------
   dive: {
     duration: 45,              // seconds

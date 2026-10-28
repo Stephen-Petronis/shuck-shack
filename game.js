@@ -116,7 +116,7 @@
              shifts: 0, oysters: 0, bestShift: 0, cuts: 0, rep: {},
              xp: { acc: 0, spd: 0, bld: 0 }, perks: { acc: 0, spd: 0, bld: 0 }, xpTotal: 0, radio: 0,
              knives: ['rusty'], knife: 'rusty', supplier: {}, barnOysters: 0,
-             lemons: 0, stock: { small: 0, big: 0 } };
+             lemons: 0, stock: { small: 0, big: 0 }, ice: 10 };
   }
   function loadSave() {
     try {
@@ -287,7 +287,13 @@
   let lastShape = null;
   let T = 0;
   let readyT = 0;
-  let hubTab = 'work';
+  let hubTab = 'work', gearTab = 'knives';
+  const GEAR_TABS = [
+    { id: 'knives', name: 'Knives' },
+    { id: 'kitchen', name: 'Kitchen', gear: ['glove', 'aid', 'ice', 'radio', 'jar'] },
+    { id: 'supplier', name: 'Supplier' },
+    { id: 'diving', name: 'Diving', gear: ['fins', 'lungs', 'bag', 'dgrip'] },
+  ];
   let resetArmed = false;
   let pendingLapse = null;    // set when a shift ends: the time of day moves on
   const pointer = { x: 0, y: 0, down: false, id: null, tracing: false, lastX: 0, lastY: 0, hover: false, type: 'touch' };
@@ -504,6 +510,7 @@
     if (!bloody) {
       if (SAVE.lemons > 0) { lemonTip = Math.max(1, Math.round(G.venue.pay * (C.lemonTip ?? 0.5))); G.lemonTips += lemonTip; G.lemoned++; lemonNote = 'lemon tip!'; }
       else if (G.venue.lemonRequired) { pay = Math.max(1, Math.round(pay * 0.5)); G.noLemon++; lemonNote = 'no lemon? half pay'; }
+      if (iceNeeded() && !SAVE.ice) { pay = Math.max(1, Math.round(pay * (C.iceWarmPay ?? 0.75))); G.warm = (G.warm || 0) + 1; lemonNote = [lemonNote, 'warm oyster'].filter(Boolean).join(', '); }
     }
     G.pay += pay; G.tips += tip; if (tip) G.fast++;
     G.done += 1; G.accSum += acc;
@@ -565,6 +572,8 @@
         ${row(`Speedy tips (${G.fast})`, money(G.tips))}
         ${G.lemoned ? row(`Lemon tips (${G.lemoned})`, money(G.lemonTips)) : ''}
         ${G.lemonsUsed ? row('Lemon wedges squeezed', G.lemonsUsed) : ''}
+        ${G.iceUsed ? row('Ice melted', `${G.iceUsed} bag${G.iceUsed === 1 ? '' : 's'}`) : ''}
+        ${G.warm ? row(`Warm oysters, less pay (${G.warm})`, 'no ice!', 'neg') : ''}
         ${row(finished ? 'Time left bonus' : 'Time left bonus (late)', money(bonus))}
         ${jar ? row(`${tier('jar').name}`, money(jar)) : ''}
         ${G.bloodLoss ? row(`Bloody oysters (${G.bloody})`, '-' + money(G.bloodLoss), 'neg') : ''}
@@ -760,6 +769,7 @@
     const p = localPos(e);
     pointer.id = e.pointerId; pointer.down = true; pointer.type = e.pointerType; pointer.x = p.x; pointer.y = p.y;
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    if (state === 'ice') { if (!paused) iceAimAt(p.x, p.y); e.preventDefault(); return; }
     if (state === 'lemon' || state === 'dive') { e.preventDefault(); return; }
     if (state === 'timelapse') { lapse = null; openHub('work'); return; }
     if (state !== 'play' || paused) return;
@@ -786,8 +796,10 @@
     if (e.pointerType === 'mouse') pointer.hover = true;
     if (pointer.id !== null && pointer.id !== e.pointerId) return;
     pointer.x = p.x; pointer.y = p.y; pointer.type = e.pointerType;
+    if (state === 'ice' && pointer.down && !paused) iceAimAt(p.x, p.y);
   });
-  function endPointer(e) { swipes.delete(e.pointerId); if (pointer.id !== e.pointerId) return; pointer.id = null; pointer.down = false; pointer.tracing = false; }
+  function endPointer(e) { swipes.delete(e.pointerId); if (pointer.id !== e.pointerId) return;
+    if (state === 'ice' && e.type === 'pointerup' && !paused) iceThrow(); else if (state === 'ice' && I) I.aim = null; pointer.id = null; pointer.down = false; pointer.tracing = false; }
   canvas.addEventListener('pointerup', endPointer);
   canvas.addEventListener('pointercancel', endPointer);
   canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') pointer.hover = false; });
@@ -803,8 +815,8 @@
     document.body.classList.toggle('in-hub', which === 'hub');
     const dockBtn = document.querySelector('#hubDock .btn');
     if (dockBtn) dockBtn.textContent = SAVE.shifts ? 'Back to work!' : 'Start your first shift!';
-    els.btnPause.hidden = !(state === 'play' || state === 'lemon' || state === 'dive');
-    document.body.classList.toggle('on-shift', state === 'play' || state === 'lemon' || state === 'dive');
+    els.btnPause.hidden = !(state === 'play' || state === 'lemon' || state === 'dive' || state === 'ice');
+    document.body.classList.toggle('on-shift', state === 'play' || state === 'lemon' || state === 'dive' || state === 'ice');
     const focusBtn = { title: 'btnStart', result: $('btnBackToShack').hidden ? 'btnSkipMini' : 'btnBackToShack', pause: 'btnResume' }[which];
     if (focusBtn) setTimeout(() => { const b = $(focusBtn); if (b) b.focus({ preventScroll: true }); }, 30);
   }
@@ -889,6 +901,7 @@
           <div class="wide"><span>Your knife</span><b>${knifeDef().name} · ${knifeFeel()}</b></div>
           <div><span>Lemon wedges</span><b>${SAVE.lemons || 0}${v.lemonRequired && !SAVE.lemons ? ' (need some!)' : ''}</b></div>
           <div><span>Cooler</span><b>${stockCount()} oyster${stockCount() === 1 ? '' : 's'}</b></div>
+          <div><span>Ice</span><b>${SAVE.ice || 0} bag${SAVE.ice === 1 ? '' : 's'}${iceNeeded() ? (SAVE.ice ? '' : ' (need some!)') : ' (not needed yet)'}</b></div>
           <div class="wide"><span>Supplier price</span><b>${money(oysterPrice(v))} per oyster · your own catch is free</b></div>
         </div>
         <p class="fine stats">${SAVE.oysters.toLocaleString()} oyster${SAVE.oysters === 1 ? '' : 's'} shucked · best shift ${money(SAVE.bestShift)}</p>
@@ -925,7 +938,11 @@
           </div>
           ${sNext ? `<button class="buy" type="button" data-act="supplier" ${SAVE.cash < sCost ? 'data-short="1"' : ''}>${money(sCost)}</button>` : '<span class="maxed">Maxed</span>'}
         </div>`;
-      h = `<h3 class="sec">Knives <span>Pick the one that fits the job</span></h3>${knivesHtml}<h3 class="sec">Supplies</h3>${supplierHtml}` + C.gear.map((g) => {
+      const gt = GEAR_TABS.find((t) => t.id === gearTab) || GEAR_TABS[0];
+      const subTabs = `<div class="subtabs" role="tablist">${GEAR_TABS.map((t) => `<button type="button" role="tab" data-gtab="${t.id}" class="${t.id === gt.id ? 'on' : ''}" aria-selected="${t.id === gt.id}">${t.name}</button>`).join('')}</div>`;
+      const blurb = { knives: 'Pick the one that fits the job', kitchen: 'Gloves, first aid, ice bin, radio, tip jar',
+                      supplier: 'Where your bought oysters come from', diving: "Barry's dive gear for Barry's Dive" }[gt.id];
+      h = subTabs + `<h3 class="sec">${gt.name} <span>${blurb}</span></h3>` + (gt.id === 'knives' ? knivesHtml : gt.id === 'supplier' ? supplierHtml : '') + C.gear.filter((g) => gt.gear && gt.gear.includes(g.id)).map((g) => {
         const i = SAVE.owned[g.id] || 0, curT = g.tiers[i], next = g.tiers[i + 1];
         const pic = g.id === 'knife' && KNIFE_URL[(next || curT).look] ? `<img class="knife-pic" src="${KNIFE_URL[(next || curT).look]}" alt="">` : '';
         const pips = g.tiers.map((_, k) => `<i class="${k <= i ? 'on' : ''}"></i>`).join('');
@@ -1023,6 +1040,8 @@
   }
 
   els.hub.addEventListener('click', (e) => {
+    const gBtn = e.target.closest('[data-gtab]');
+    if (gBtn) { gearTab = gBtn.dataset.gtab; audio(); SFX.slide(); renderHub(); return; }
     const tabBtn = e.target.closest('[data-tab]');
     if (tabBtn) { hubTab = tabBtn.dataset.tab; resetArmed = false; renderHub(); return; }
     const b = e.target.closest('[data-act]'); if (!b) return;
@@ -1105,7 +1124,7 @@
   $('btnTipOk').addEventListener('click', () => { paused = tipWasPaused; showScreen(paused ? 'pause' : null); });
 
   function setPaused(p) {
-    if (state !== 'play' && state !== 'lemon' && state !== 'dive') return;
+    if (state !== 'play' && state !== 'lemon' && state !== 'dive' && state !== 'ice') return;
     paused = p; pointer.tracing = false;
     showScreen(p ? 'pause' : null);
   }
@@ -1151,11 +1170,12 @@
     paused = false;
     if (state === 'lemon') { M.pieces = []; M.arms.forEach((a) => { a.hold = null; }); endLemons(); }
     else if (state === 'dive') endDive();
+    else if (state === 'ice') { I.left = 0; I.shot = null; I.bits = []; endIce(); }
     else endShift(false);
   });
   els.btnPause.addEventListener('click', () => setPaused(!paused));
   els.btnMute.addEventListener('click', () => setMuted(!muted));
-  document.addEventListener('visibilitychange', () => { if (document.hidden && (state === 'play' || state === 'lemon' || state === 'dive') && !paused) setPaused(true); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && (state === 'play' || state === 'lemon' || state === 'dive' || state === 'ice') && !paused) setPaused(true); });
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' || e.key === 'p') setPaused(!paused);
     if (e.key === 'm') setMuted(!muted);
@@ -1183,7 +1203,7 @@
     T += dt;
     if (state === 'play' && !paused) {
       updateFly(dt);
-      if (phase !== 'ready') drainLemons(dt);
+      if (phase !== 'ready') { drainLemons(dt); meltIce(dt); }
       if (phase === 'ready') {
         if (T - readyT >= C.orderUpTime) nextOyster();
       } else {
@@ -1604,7 +1624,7 @@
       drawOysterImg(fx.lid.shape + '_top', fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5);
       drawEyes(fx.lid.shape, fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5, 9);
     }
-    if (state === 'play') { drawFly(); if (venue().lemonButton) drawOcto(); drawLemonGauge(); }
+    if (state === 'play') { drawFly(); if (venue().lemonButton) drawOcto(); drawLemonGauge(); drawIceGauge(); }
     drawArm();
     if (state === 'play' && phase === 'ready' && !paused) drawOrderUp();
     drawStamp();
@@ -1919,6 +1939,8 @@
       stat: () => `Wedges: ${SAVE.lemons || 0} / ${C.lemonCap ?? 60}`, open: () => true, go: () => startLemons() },
     { id: 'dive', name: "Barry's Dive", c: '#7be0ff', why: 'Catch your own oysters. Skip the supplier bill = more profit.',
       stat: () => `Cooler: ${stockCount()} / ${C.stockCap ?? 40}`, open: () => diveOpen(), go: () => startDive() },
+    { id: 'ice', name: 'Iceberg Harpoon', c: '#cfeaff', why: '3 harpoons: knock the most ice off the berg. Ice keeps oysters cold = full pay.',
+      stat: () => `Ice: ${SAVE.ice || 0} / ${C.iceCap ?? 50}`, open: () => true, go: () => startIce() },
     { id: 'sauce', name: 'Cocktail Sauce', c: '#ff8a7a', why: 'Coming soon: mix sauce for shrimp cocktail orders.', soon: true },
     { id: 'sharpen', name: 'Knife Sharpening', c: '#cfd8dc', why: 'Coming soon: a sharp knife flicks barnacles easier.', soon: true },
   ];
@@ -2008,7 +2030,7 @@
     }
   }
   function goToShack() {
-    M = null; V = null;
+    M = null; V = null; I = null;
     if (pendingLapse && venueHasScene()) {
       lapse = { t: 0, venueId: venue().id };
       pendingLapse = null;
@@ -2526,12 +2548,325 @@
     showScreen('result');
   }
 
+  // =====================================================================
+  //  MINI GAME: ICEBERG HARPOON
+  //  The berg is a web of ice chunks. The bottom row is frozen into the sea.
+  //  Barry gets 3 harpoons. A hit rips out that chunk (and anything joined to it
+  //  by a CRACKED line). Anything no longer connected to the bottom falls off.
+  //  Every chunk you knock loose = 1 bag of ice.
+  // =====================================================================
+  const IC = C.iceHarpoon || {};
+  let I = null;
+  const iceNeeded = () => C.venues.indexOf(venue()) >= C.venues.findIndex((v) => v.id === (C.iceFrom || 'boardwalk'));
+  function hexNb(r, c) {
+    const o = r % 2;
+    return [[r, c - 1], [r, c + 1], [r - 1, c - 1 + o], [r - 1, c + o], [r + 1, c - 1 + o], [r + 1, c + o]];
+  }
+  function makeBerg() {   // keep rolling until the berg is a good size
+    let best = null;
+    for (let t = 0; t < 30; t++) {
+      const b = rollBerg(), n = b.cells.size;
+      if (n >= (IC.minChunks ?? 45) && n <= (IC.maxChunks ?? 75)) return b;
+      if (!best || Math.abs(n - 55) < Math.abs(best.cells.size - 55)) best = b;
+    }
+    return best;
+  }
+  function rollBerg() {
+    const rows = IC.rows ?? 9, cols = IC.cols ?? 9, cells = new Map(), key = (r, c) => r * 100 + c;
+    // bottom row: frozen into the sea
+    const b0 = 1 + Math.floor(Math.random() * 2), b1 = cols - 2 - Math.floor(Math.random() * 2);
+    for (let c = b0; c <= b1; c++) cells.set(key(rows - 1, c), { r: rows - 1, c, anchor: true });
+    for (let r = rows - 2; r >= 0; r--) {
+      const up = rows - 1 - r;
+      for (let c = 0; c < cols; c++) {
+        const below = hexNb(r, c).filter(([rr]) => rr === r + 1).some(([rr, cc]) => cells.has(key(rr, cc)));
+        const mid = 1 - Math.abs(c - (cols - 1) / 2) / (cols / 2);
+        const p = below ? 0.5 + 0.45 * mid - up * 0.025 : 0;
+        if (Math.random() < p) cells.set(key(r, c), { r, c });
+      }
+      // overhangs: sometimes grow sideways off a chunk in this row
+      [...cells.values()].filter((x) => x.r === r).forEach((x) => {
+        if (Math.random() < 0.18) { const cc = x.c + (Math.random() < 0.5 ? -1 : 1); if (cc >= 0 && cc < cols) cells.set(key(r, cc), { r, c: cc }); }
+      });
+    }
+    // bonds
+    const bonds = new Map(), bk = (a, b) => (a < b ? a + ':' + b : b + ':' + a);
+    const solidP = IC.solid ?? 0.5, crackP = IC.cracked ?? 0.2;
+    cells.forEach((x, k) => hexNb(x.r, x.c).forEach(([r, c]) => {
+      const k2 = key(r, c); if (!cells.has(k2) || bonds.has(bk(k, k2))) return;
+      const q = Math.random(); bonds.set(bk(k, k2), q < solidP ? 'solid' : q < solidP + crackP ? 'crack' : 'none');
+    }));
+    // make sure everything starts attached to the bottom (adds strong bonds where needed = weak necks)
+    for (let guard = 0; guard < 200; guard++) {
+      const reach = iceReach(cells, bonds, key, bk);
+      const loose = [...cells.keys()].filter((k) => !reach.has(k));
+      if (!loose.length) break;
+      let fixed = false;
+      for (const k of loose) {
+        const x = cells.get(k);
+        const nb = hexNb(x.r, x.c).map(([r, c]) => key(r, c)).find((k2) => reach.has(k2));
+        if (nb !== undefined) { bonds.set(bk(k, nb), 'solid'); fixed = true; break; }
+      }
+      if (!fixed) { loose.forEach((k) => cells.delete(k)); }
+    }
+    bonds.forEach((v, k) => { if (v === 'none') bonds.delete(k); });
+    return { cells, bonds, key, bk, rows, cols };
+  }
+  function iceReach(cells, bonds, key, bk) {
+    const seen = new Set(), q = [];
+    cells.forEach((x, k) => { if (x.anchor) { seen.add(k); q.push(k); } });
+    while (q.length) {
+      const k = q.pop(), x = cells.get(k);
+      hexNb(x.r, x.c).forEach(([r, c]) => { const k2 = key(r, c); if (cells.has(k2) && !seen.has(k2) && (bonds.get(bk(k, k2)) || 'none') !== 'none') { seen.add(k2); q.push(k2); } });
+    }
+    return seen;
+  }
+  // what one harpoon does (pure: works on copies, used for the real hit and for Barry's "par")
+  function iceHit(berg, cells, k0) {
+    const { key, bk, bonds } = berg;
+    const smash = new Set([k0]), q = [k0];
+    while (q.length) {   // cracked lines break along with the chunk you hit
+      const k = q.pop(), x = cells.get(k);
+      hexNb(x.r, x.c).forEach(([r, c]) => { const k2 = key(r, c); if (cells.has(k2) && !smash.has(k2) && bonds.get(bk(k, k2)) === 'crack') { smash.add(k2); q.push(k2); } });
+    }
+    const left = new Map(cells); smash.forEach((k) => left.delete(k));
+    const reach = iceReach(left, bonds, key, bk);
+    const fall = [...left.keys()].filter((k) => !reach.has(k));
+    fall.forEach((k) => left.delete(k));
+    return { smash: [...smash], fall, left };
+  }
+  function icePar(berg) {   // Barry's own best guess: greedy, one throw at a time
+    let cells = berg.cells, total = 0;
+    for (let n = 0; n < (IC.harpoons ?? 3); n++) {
+      let best = null;
+      cells.forEach((_, k) => { const h = iceHit(berg, cells, k); const g = h.smash.length + h.fall.length; if (!best || g > best.g) best = { g, h }; });
+      if (!best) break; total += best.g; cells = best.h.left;
+    }
+    return total;
+  }
+  function iceGeom() {
+    const B = I.berg, seaY = H * 0.68, top = L.top + 70;
+    const cr = Math.min((W * 0.94) / ((B.cols + 0.5) * Math.sqrt(3)), (seaY + 10 - top) / (B.rows * 1.5 + 0.5));
+    const w = cr * Math.sqrt(3), x0 = W / 2 - (B.cols - 0.5) * w / 2;
+    const y0 = seaY + cr * 0.4 - (B.rows - 1) * cr * 1.5;
+    return { cr, w, x0, y0, seaY, pos: (r, c) => ({ x: x0 + c * w + (r % 2 ? w / 2 : 0), y: y0 + r * cr * 1.5 }) };
+  }
+  function startIce() {
+    state = 'ice'; phase = 'idle'; paused = false; cur = null; hurt = null; M = null; V = null;
+    const berg = makeBerg();
+    I = { t: 0, intro: 2.2, berg, cells: berg.cells, start: berg.cells.size, left: IC.harpoons ?? 3, got: 0, par: icePar(berg),
+          aim: null, shot: null, bits: [], floats: [], flash: [], over: false, endT: null };
+    showScreen(null);
+    hudLabels(['Mini game', 'Harpoons', 'Ice']);
+    els.venue.textContent = 'Iceberg Harpoon';
+    iceHud();
+    tone(200, 0.4, 'triangle', 0.06, 120); noise(0.5, 0.08, 400);
+  }
+  function iceHud() {
+    els.count.textContent = '↑'.repeat(0) + `${I.left} / ${IC.harpoons ?? 3}`;
+    els.earned.textContent = String(I.got);
+    const f = I.left / (IC.harpoons ?? 3);
+    els.clockFill.style.transform = `scaleX(${f})`; els.clockFill.dataset.low = I.left <= 1 ? '1' : '0';
+    els.clockText.textContent = `Par ${I.par}`;
+  }
+  function iceAimAt(x, y) { if (I && !I.over) I.aim = { x, y: y - (pointer.type === 'mouse' ? 0 : 70) }; }
+  function iceThrow() {
+    if (!I || !I.aim || I.shot || I.left <= 0 || I.t < I.intro) { if (I) I.aim = null; return; }
+    const g = iceGeom(), sway = g.cr * (IC.sway ?? 0.35);
+    const tx = I.aim.x + Math.sin(T * 4.3) * sway, ty = I.aim.y + Math.cos(T * 3.1) * sway * 0.6;
+    I.shot = { t: 0, dur: 0.55, fx: W / 2, fy: H - 120, tx, ty };
+    I.left--; I.aim = null; iceHud();
+    noise(0.2, 0.1, 1800); tone(500, 0.2, 'triangle', 0.05, 900);
+  }
+  function iceLand(s) {
+    const g = iceGeom(); let best = null, bd = Infinity;
+    I.cells.forEach((x, k) => { const p = g.pos(x.r, x.c), d = Math.hypot(p.x - s.tx, p.y - s.ty); if (d < bd) { bd = d; best = k; } });
+    if (best === null || bd > g.cr * 0.95) {
+      I.flash.push({ text: 'Missed!', x: s.tx, y: s.ty, t: 0, bad: true }); tone(140, 0.25, 'sawtooth', 0.05, 90); return;
+    }
+    const h = iceHit(I.berg, I.cells, best);
+    h.smash.forEach((k, i) => { const x = I.cells.get(k), p = g.pos(x.r, x.c); I.bits.push({ x: p.x, y: p.y, vx: (Math.random() - 0.5) * 200, vy: -150 - Math.random() * 150, rot: 0, vr: (Math.random() - 0.5) * 8, t: 0, delay: i * 0.05, cr: g.cr, smash: true }); });
+    h.fall.forEach((k) => { const x = I.cells.get(k), p = g.pos(x.r, x.c); I.bits.push({ x: p.x, y: p.y, vx: (Math.random() - 0.5) * 40, vy: 0, rot: 0, vr: (Math.random() - 0.5) * 2, t: 0, delay: 0.25 + Math.random() * 0.25, cr: g.cr }); });
+    I.cells = h.left;
+    const n = h.smash.length + h.fall.length; I.got += n;
+    I.flash.push({ text: h.fall.length >= 4 ? `TIMBER! +${n}` : `+${n} ice`, x: s.tx, y: s.ty - 30, t: 0, big: h.fall.length >= 4 });
+    noise(0.35, 0.22, 1200); tone(900, 0.08, 'square', 0.05, 300);
+    if (h.fall.length) setTimeout(() => noise(0.6, 0.18, 300), 450);
+    iceHud();
+  }
+  function updateIce(dt) {
+    if (!I || paused) return;
+    I.t += dt;
+    if (I.shot) { I.shot.t += dt; if (I.shot.t >= I.shot.dur) { const s = I.shot; I.shot = null; iceLand(s); } }
+    const g = iceGeom();
+    I.bits.forEach((b) => {
+      if (b.delay > 0) { b.delay -= dt; return; }
+      b.t += dt; b.vy += H * 1.6 * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.rot += b.vr * dt;
+      if (!b.splashed && b.y > g.seaY + 10) { b.splashed = true; if (!b.smash) { I.floats.push({ x: b.x, y: g.seaY + 18 + Math.random() * 30, t: 0, cr: b.cr * 0.8, rot: b.rot }); noise(0.2, 0.08, 700); } }
+    });
+    I.bits = I.bits.filter((b) => b.y < H + 60);
+    I.floats.forEach((f) => { f.t += dt; f.x += (W / 2 - f.x) * dt * 0.4; f.y += (H - 130 - f.y) * dt * 0.25; });
+    I.flash.forEach((f) => { f.t += dt; }); I.flash = I.flash.filter((f) => f.t < 1.3);
+    if (!I.over && I.left <= 0 && !I.shot && !I.bits.length) { I.endT = (I.endT ?? 1.0) - dt; if (I.endT <= 0) endIce(); }
+  }
+  function iceHex(x, y, r) { ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = Math.PI / 6 + i * Math.PI / 3; ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } ctx.closePath(); }
+  function drawIce() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const g = iceGeom(), B = I.berg;
+    const sky = ctx.createLinearGradient(0, 0, 0, g.seaY); sky.addColorStop(0, '#9fd3f0'); sky.addColorStop(1, '#e6f6ff');
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, g.seaY);
+    const sea = ctx.createLinearGradient(0, g.seaY, 0, H); sea.addColorStop(0, '#2b7fb8'); sea.addColorStop(1, '#174f7a');
+    // underwater part of the berg (the anchor)
+    ctx.fillStyle = sea; ctx.fillRect(0, g.seaY, W, H - g.seaY);
+    const anchors = [...I.cells.values()].filter((x) => x.anchor);
+    if (anchors.length) {
+      const xs = anchors.map((x) => g.pos(x.r, x.c).x);
+      ctx.fillStyle = 'rgba(190,230,250,0.35)';
+      ctx.beginPath(); ctx.moveTo(Math.min(...xs) - g.cr, g.seaY); ctx.lineTo(Math.max(...xs) + g.cr, g.seaY); ctx.lineTo(Math.max(...xs) + g.cr * 2.5, H); ctx.lineTo(Math.min(...xs) - g.cr * 2.5, H); ctx.closePath(); ctx.fill();
+    }
+    // bonds: strong = thick blue, cracked = zigzag
+    ctx.save(); ctx.lineCap = 'round';
+    B.bonds.forEach((v, k) => {
+      const [a, b] = k.split(':').map(Number); if (!I.cells.has(a) || !I.cells.has(b)) return;
+      const A = I.cells.get(a), Bc = I.cells.get(b), p = g.pos(A.r, A.c), q = g.pos(Bc.r, Bc.c);
+      if (v === 'solid') { ctx.strokeStyle = '#2f6f9e'; ctx.lineWidth = Math.max(3, g.cr * 0.22); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
+      else {
+        ctx.strokeStyle = '#d9534f'; ctx.lineWidth = Math.max(2, g.cr * 0.1); ctx.beginPath();
+        for (let i = 0; i <= 6; i++) { const t = i / 6, nx = -(q.y - p.y), ny = q.x - p.x, nl = Math.hypot(nx, ny) || 1, z = (i % 2 ? 1 : -1) * g.cr * 0.12 * (i && i < 6 ? 1 : 0); ctx.lineTo(p.x + (q.x - p.x) * t + nx / nl * z, p.y + (q.y - p.y) * t + ny / nl * z); }
+        ctx.stroke();
+      }
+    });
+    ctx.restore();
+    // chunks
+    I.cells.forEach((x) => {
+      const p = g.pos(x.r, x.c);
+      iceHex(p.x, p.y, g.cr * 0.64);
+      ctx.fillStyle = x.anchor ? '#cfeaf7' : '#f2fbff'; ctx.fill();
+      ctx.strokeStyle = '#2f6f9e'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.ellipse(p.x - g.cr * 0.25, p.y - g.cr * 0.3, g.cr * 0.2, g.cr * 0.09, -0.5, 0, Math.PI * 2); ctx.fill();
+      if (x.anchor) { ctx.fillStyle = 'rgba(47,111,158,0.5)'; ctx.fillRect(p.x - g.cr * 0.4, p.y + g.cr * 0.25, g.cr * 0.8, 3); }
+    });
+    // waterline over the anchors
+    ctx.fillStyle = 'rgba(43,127,184,0.55)'; ctx.fillRect(0, g.seaY, W, g.cr * 0.9);
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2; ctx.beginPath();
+    for (let x = 0; x <= W; x += 10) ctx.lineTo(x, g.seaY + Math.sin(x * 0.05 + T * 2) * 3); ctx.stroke();
+    // falling / smashed chunks
+    I.bits.forEach((b) => {
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot); if (b.smash) ctx.scale(0.6, 0.6);
+      iceHex(0, 0, b.cr * 0.78); ctx.fillStyle = b.smash ? '#ffffff' : '#e6f6ff'; ctx.fill(); ctx.strokeStyle = '#2f6f9e'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+    });
+    I.floats.forEach((f) => { ctx.save(); ctx.translate(f.x, f.y + Math.sin(T * 2 + f.x) * 2); ctx.rotate(f.rot); ctx.globalAlpha = Math.max(0, 1 - f.t / 2.5); iceHex(0, 0, f.cr * 0.6); ctx.fillStyle = '#e6f6ff'; ctx.fill(); ctx.restore(); });
+    // Barry from behind on his ice floe
+    const bx = W / 2, by = H - 100;
+    ctx.fillStyle = '#eaf6ff'; ctx.strokeStyle = '#2f6f9e'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(bx, by + 36, 90, 22, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 3;
+    ctx.fillStyle = '#9b6a48'; ctx.beginPath(); ctx.ellipse(bx, by + 6, 34, 36, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#a8775a'; ctx.beginPath(); ctx.arc(bx, by - 34, 22, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    const ready = !I.shot && I.left > 0;
+    if (ready) {   // harpoon held up, pointing at the aim
+      const ax = I.aim ? I.aim.x : bx, ay = I.aim ? I.aim.y : by - 200, ang = Math.atan2(ay - (by - 20), ax - (bx + 26));
+      ctx.save(); ctx.translate(bx + 26, by - 20); ctx.rotate(ang);
+      ctx.strokeStyle = '#6b4a2a'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-30, 0); ctx.lineTo(40, 0); ctx.stroke();
+      ctx.fillStyle = '#c9d3dc'; ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(40, -7); ctx.lineTo(58, 0); ctx.lineTo(40, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.fillStyle = '#6e4a32'; ctx.beginPath(); ctx.ellipse(bx + 28, by - 4, 10, 20, -0.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    // harpoon in flight: arcs away into the distance
+    if (I.shot) {
+      const s = I.shot, k = s.t / s.dur, x = s.fx + (s.tx - s.fx) * k, y = s.fy + (s.ty - s.fy) * k - Math.sin(k * Math.PI) * H * 0.12;
+      const sc = 1 - 0.55 * k;
+      ctx.strokeStyle = 'rgba(80,60,40,0.6)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(bx + 26, by - 20); ctx.quadraticCurveTo((bx + x) / 2, Math.min(by, y) - H * 0.1, x, y); ctx.stroke();
+      ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(s.ty - s.fy, s.tx - s.fx) + (0.5 - k) * 0.8); ctx.scale(sc, sc);
+      ctx.strokeStyle = '#6b4a2a'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-40, 0); ctx.lineTo(20, 0); ctx.stroke();
+      ctx.fillStyle = '#c9d3dc'; ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(20, -7); ctx.lineTo(38, 0); ctx.lineTo(20, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+    // aim: crosshair (sways a little; better aim takes practice)
+    if (I.aim && !I.shot) {
+      const sway = g.cr * (IC.sway ?? 0.35), ax = I.aim.x + Math.sin(T * 4.3) * sway, ay = I.aim.y + Math.cos(T * 3.1) * sway * 0.6;
+      ctx.save(); ctx.strokeStyle = '#d9534f'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(ax, ay, g.cr * 0.6, 0, Math.PI * 2); ctx.moveTo(ax - g.cr, ay); ctx.lineTo(ax + g.cr, ay); ctx.moveTo(ax, ay - g.cr); ctx.lineTo(ax, ay + g.cr); ctx.stroke();
+      ctx.setLineDash([6, 8]); ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(bx + 26, by - 20); ctx.quadraticCurveTo((bx + ax) / 2, Math.min(by, ay) - H * 0.1, ax, ay); ctx.stroke(); ctx.restore();
+    }
+    // harpoons left
+    for (let i = 0; i < (IC.harpoons ?? 3); i++) {
+      const hx = 26 + i * 22, hy = H - 60, on = i < I.left;
+      ctx.strokeStyle = on ? '#6b4a2a' : 'rgba(0,0,0,0.25)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(hx, hy + 30); ctx.lineTo(hx, hy - 10); ctx.stroke();
+      ctx.fillStyle = on ? '#c9d3dc' : 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.moveTo(hx - 6, hy - 10); ctx.lineTo(hx, hy - 24); ctx.lineTo(hx + 6, hy - 10); ctx.closePath(); ctx.fill();
+    }
+    // legend
+    const ly = L.top + 22;
+    ctx.save(); ctx.fillStyle = 'rgba(29,23,18,0.72)'; ctx.fillRect(8, ly - 14, W - 16, 30); ctx.restore();
+    ctx.save(); ctx.strokeStyle = '#7fc1ea'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(18, ly + 1); ctx.lineTo(42, ly + 1); ctx.stroke(); ctx.restore();
+    label('strong', 72, ly + 1, 14, '#fff3d6');
+    ctx.save(); ctx.strokeStyle = '#ff7a72'; ctx.lineWidth = 3; ctx.beginPath(); for (let i = 0; i <= 6; i++) ctx.lineTo(W * 0.42 + i * 4, ly + 1 + (i % 2 ? 4 : -4)); ctx.stroke(); ctx.restore();
+    label('cracked (breaks too)', W * 0.42 + 30 + Math.min(W * 0.5, 160) / 2, ly + 1, 14, '#fff3d6', 0, Math.min(W * 0.5, 160));
+    I.flash.forEach((f) => { const a = 1 - f.t / 1.3; label(f.text, f.x, f.y - f.t * 40, f.big ? Math.min(W, H) * 0.08 : 24, f.bad ? `rgba(255,107,91,${a})` : `rgba(255,210,63,${a})`); });
+    if (I.t < I.intro) {
+      const k = Math.min(1, I.t / 0.25), sc = 0.5 + 0.5 * easeOutBack(k);
+      ctx.save(); ctx.translate(W / 2, H * 0.3); ctx.scale(sc, sc);
+      ctx.fillStyle = 'rgba(29,23,18,0.8)'; ctx.fillRect(-W * 0.45, -60, W * 0.9, 130);
+      label('ICEBERG HARPOON', 0, -24, Math.min(W, H) * 0.08, '#7be0ff');
+      label('3 harpoons. Hit the weak spots:', 0, 16, 18, '#fff3d6');
+      label("anything not hanging on to the bottom falls off!", 0, 42, 16, '#fff3d6');
+      ctx.restore();
+    }
+  }
+  function endIce() {
+    I.over = true; state = 'result';
+    hudLabels(['Working at', 'Shucked', 'Earned']);
+    const cap = C.iceCap ?? 50, add = Math.max(0, Math.min(I.got, cap - (SAVE.ice || 0)));
+    SAVE.ice = (SAVE.ice || 0) + add;
+    const beat = I.got >= I.par, xp = Math.round(I.got * 0.6) + (beat ? 15 : 0);
+    SAVE.xp.acc += xp; SAVE.xpTotal = (SAVE.xpTotal || 0) + xp;
+    SAVE.iceBest = Math.max(SAVE.iceBest || 0, I.got);
+    writeSave(); SFX.orderUp();
+    const row = (l, v, cls = '') => `<div class="line ${cls}"><span>${l}</span><b>${v}</b></div>`;
+    $('resultTitle').textContent = beat ? (I.got > I.par ? 'Better than Barry!' : 'Iceberg master!') : `Knocked loose: ${I.got}`;
+    $('resultTag').textContent = 'Into the ice bin';
+    $('resultBody').innerHTML = `
+      <p class="sub">${I.got} of ${I.start} chunks with 3 harpoons</p>
+      <div class="receipt">
+        ${row('Ice knocked loose', I.got)}
+        ${row("Barry's par", I.par)}
+        ${row('Ice bags stocked', `+${add} (now ${SAVE.ice})`, 'total')}
+      </div>
+      <p class="fine">${iceNeeded() ? 'Ice melts all shift long. Run out and you serve warm oysters for less pay.' : 'You don’t need ice at the Beach Shack yet, but from the Boardwalk on it melts all shift. Stock up early!'}${add < I.got ? ' The ice bin is full!' : ''}</p>
+      <div class="xpline"><span class="xpchip" style="--c:#4aa3ff">Accuracy +${xp}</span></div>`;
+    setResultButtons('hub');
+    showScreen('result');
+  }
+  // ice melts during shifts (from the Boardwalk on)
+  function meltIce(dt) {
+    if (!iceNeeded() || !SAVE.ice) return;
+    const i = C.venues.indexOf(venue());
+    G.iceAcc = (G.iceAcc || 0) + (C.iceMelt || [0, 0.1, 0.14, 0.18, 0.22])[Math.min(i, 4)] * dt;
+    while (G.iceAcc >= 1 && SAVE.ice > 0) { G.iceAcc -= 1; SAVE.ice--; G.iceUsed = (G.iceUsed || 0) + 1; G.iceBlip = T; }
+    if (!SAVE.ice) fx.popups.push({ text: 'Out of ice!', sub: 'warm oysters pay less', x: L.cx, y: L.top + 110, t: 0, small: true, bad: true });
+  }
+  function drawIceGauge() {
+    if (!G || !iceNeeded()) return;
+    const n = SAVE.ice || 0, cap = C.iceCap ?? 50, x = W - 40, y = L.top + 74, low = n <= 3;
+    const blip = Math.max(0, 1 - (T - (G.iceBlip || -9)) / 0.35);
+    ctx.save(); ctx.translate(x, y);
+    ctx.fillStyle = 'rgba(29,23,18,0.78)'; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-34, -20, 64, 40, 12); else ctx.rect(-34, -20, 64, 40); ctx.fill();
+    const r = 10 * (1 + blip * 0.25); iceHex(-17, -2, r); ctx.fillStyle = '#e6f6ff'; ctx.fill(); ctx.strokeStyle = '#7fc1ea'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(-4, 10, 28, 4);
+    ctx.fillStyle = low ? '#ff6b5b' : '#7be0ff'; ctx.fillRect(-4, 10, 28 * Math.min(1, n / cap), 4);
+    ctx.restore();
+    label(String(n), x + 10, y - 3, 17, low && Math.floor(T * 4) % 2 ? '#ff6b5b' : '#fff3d6');
+    if (blip > 0) label('-1', x + 10, y - 22 - (1 - blip) * 10, 13, `rgba(127,193,234,${blip})`);
+  }
+
   // ---------- Loop ----------
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     if (state === 'lemon' || (state === 'result' && M && M.over)) { updateLemons(dt); if (M) drawLemons(); }
     else if (state === 'dive' || (state === 'result' && V && V.over)) { T += dt; updateDive(dt); if (V) drawDive(); }
+    else if (state === 'ice' || (state === 'result' && I && I.over)) { T += dt; updateIce(dt); if (I) drawIce(); }
     else if (state === 'timelapse') { T += dt; updateLapse(dt); drawBackdrop(); }
     else if (state === 'title' || state === 'hub') { update(dt); drawBackdrop(); }
     else { update(dt); draw(); }
@@ -2541,7 +2876,7 @@
   // Read-only peek for debugging in the console.
   window.__shuck = { get oyster() { return cur && { shape: cur.shape, flip: cur.flip, pts: cur.pts, phase, nCovered: cur.nCovered,
                        barn: (cur.barn || []).map((b) => Object.assign(barnPos(cur, b), { alive: b.alive, r: b.r })) }; },
-                     get shift() { return G; }, get save() { return SAVE; }, get lemons() { return M; }, get dive() { return V; } };
+                     get shift() { return G; }, get save() { return SAVE; }, get lemons() { return M; }, get dive() { return V; }, get ice() { return I; }, iceGeom: () => iceGeom() };
 
   window.addEventListener('resize', layout);
   if (window.visualViewport) window.visualViewport.addEventListener('resize', layout);

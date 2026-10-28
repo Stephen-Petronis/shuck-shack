@@ -87,7 +87,13 @@ Oysters have to come from somewhere, and that's the choice between shifts:
   to go back and try again. ("Mental is metal.")
 - Make leveling stretch out so it feels earned; the tip jar stays, expeditions sit on top as the big money sink.
 
-## Ice (next resource) — IDEAS, pick one
+## Ice — DONE (first pass): Iceberg Harpoon
+- Stephen's pick: the berg is a web of chunks joined by lines, bottom row frozen into the sea. Barry gets 3 harpoons;
+  a hit rips out that chunk plus anything joined by CRACKED lines, and whatever isn't connected to the bottom falls
+  off (like Puzzle Bobble). Find the weak necks. Barry's "par" is his own greedy best.
+- Ice melts all shift from the Boardwalk on; out of ice = warm oysters at 75% pay. Ice gauge under the lemon gauge.
+
+## Ice — original ideas
 - What ice does: keeps the cooler oysters fresh and the raw bar looking good. It melts all shift like lemons drain.
   Run out and cooler oysters spoil / customers pay less.
 - Mini game ideas:
@@ -97,6 +103,9 @@ Oysters have to come from somewhere, and that's the choice between shifts:
     Hit wrong and it shatters into slush.
   - **Barry's belly slide**: Barry slides down a glacier collecting ice chunks, dodging rocks and penguins.
   - Combo: harpoon a berg, tow it back, then chip it.
+
+## Gear menu — DONE
+- Gear tab split into Knives / Kitchen / Supplier / Diving.
 
 ## Franchise mode (Stephen's idea) — TODO
 - Run 2, then 4, then 6 shucking windows at once. Everything gets smaller and harder; tap a window to zoom in.
