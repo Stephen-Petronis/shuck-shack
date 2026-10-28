@@ -105,7 +105,14 @@ Oysters have to come from somewhere, and that's the choice between shifts:
   - Combo: harpoon a berg, tow it back, then chip it.
 
 ## Gear menu — DONE
-- Gear tab split into Knives / Kitchen / Supplier / Diving.
+- Gear tab split into Knives / Kitchen / Supplier / Diving / Ice / Lemons.
+
+## RULE (Stephen): every mini game gets its own upgrade tab
+- Every mini game, every new edition, needs money you can spend to get better at it and push the numbers up.
+  Barry makes more money the more he puts back in. Keep repeating and amplifying the same gameplay.
+  - Ice: harpoons (start with 1, up to 5), harpoon head (wide / Big Bertha), boat (bigger bergs + bigger ice bin), sight.
+  - Lemons: lemon crate (wedge cap), octopus stamina (longer Lemon Toss), octopus buddy (faster in-shift throws).
+  - Diving: flippers, lungs, flipper bag, dive grip.
 
 ## Franchise mode (Stephen's idea) — TODO
 - Run 2, then 4, then 6 shucking windows at once. Everything gets smaller and harder; tap a window to zoom in.

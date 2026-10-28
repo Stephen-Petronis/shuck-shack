@@ -82,6 +82,45 @@ window.SHUCK_CONFIG = {
       { name: 'Tusk Polish',     cost: 140, mash: 1.6, needs: 'boardwalk', desc: 'Each smash counts 60% more on big oysters.' },
       { name: 'Oyster Tongs',    cost: 550, mash: 2.3, needs: 'pier', desc: 'Big oysters barely stand a chance.' },
     ] },
+    { id: 'lcrate', name: 'Lemon crate', tiers: [
+      { name: 'Paper Bag',       cost: 0,   cap: 60,  desc: 'Holds 60 wedges.' },
+      { name: 'Lemon Crate',     cost: 80,  cap: 100, desc: 'Holds 100 wedges.' },
+      { name: 'Lemon Fridge',    cost: 350, cap: 160, needs: 'boardwalk', desc: 'Holds 160 wedges.' },
+      { name: 'Lemon Silo',      cost: 1200, cap: 250, needs: 'pier', desc: 'Holds 250 wedges. Citrus empire.' },
+    ] },
+    { id: 'octo', name: 'Octopus stamina', tiers: [
+      { name: 'Sleepy Octopus',  cost: 0,   dur: 15, desc: 'Lemon Toss lasts 15 seconds.' },
+      { name: 'Octopus Snacks',  cost: 70,  dur: 20, desc: 'Lemon Toss lasts 20 seconds.' },
+      { name: 'Octopus Coffee',  cost: 300, dur: 26, needs: 'boardwalk', desc: 'Lemon Toss lasts 26 seconds.' },
+      { name: 'Octopus Gym',     cost: 900, dur: 34, needs: 'pier', desc: 'Lemon Toss lasts 34 seconds.' },
+    ] },
+    { id: 'octobtn', name: 'Octopus buddy', tiers: [
+      { name: 'Slow Buddy',      cost: 0,   cd: 1.5, desc: 'In-shift octopus throws a lemon every 1.5s (Pier 9 and up).' },
+      { name: 'Quick Buddy',     cost: 400, cd: 1.0, needs: 'pier', desc: 'Throws every 1 second.' },
+      { name: 'Turbo Buddy',     cost: 1100, cd: 0.6, needs: 'downtown', desc: 'Throws every 0.6 seconds.' },
+    ] },
+    { id: 'harpoons', name: 'Harpoons', tiers: [
+      { name: 'One Harpoon',     cost: 0,   n: 1, desc: 'One throw. Make it count.' },
+      { name: 'Two Harpoons',    cost: 60,  n: 2, desc: 'A second throw at the berg.' },
+      { name: 'Three Harpoons',  cost: 180, n: 3, needs: 'boardwalk', desc: 'Three throws per berg.' },
+      { name: 'Harpoon Rack',    cost: 450, n: 4, needs: 'pier', desc: 'Four throws per berg.' },
+      { name: 'Harpoon Arsenal', cost: 1100, n: 5, needs: 'downtown', desc: 'Five throws. The berg is doomed.' },
+    ] },
+    { id: 'hhead', name: 'Harpoon head', tiers: [
+      { name: 'Plain Point',     cost: 0,   impact: 0, desc: 'Knocks out just the chunk it hits.' },
+      { name: 'Wide Head',       cost: 220, impact: 1, needs: 'boardwalk', desc: 'Also smashes the chunks on its left and right.' },
+      { name: 'Big Bertha',      cost: 900, impact: 2, needs: 'pier', desc: 'Smashes every chunk around the hit.' },
+    ] },
+    { id: 'boat', name: 'Boat', tiers: [
+      { name: 'Ice Floe',        cost: 0,   cap: 50,  rows: 11, cols: 9,  min: 45, max: 75,  desc: 'Barry floats out on a chunk of ice. Holds 50 bags.' },
+      { name: 'Rowboat',         cost: 300, cap: 80,  rows: 12, cols: 10, min: 65, max: 95,  needs: 'boardwalk', desc: 'Reach bigger bergs. Holds 80 bags.' },
+      { name: 'Tug Boat',        cost: 1000, cap: 120, rows: 13, cols: 11, min: 85, max: 120, needs: 'pier', desc: 'Giant bergs. Holds 120 bags.' },
+    ] },
+    { id: 'sight', name: 'Harpoon sight', tiers: [
+      { name: 'Squinting',       cost: 0,   sway: 0.35, desc: 'Barry\'s aim wobbles a bit.' },
+      { name: 'Brass Sight',     cost: 90,  sway: 0.18, desc: 'Steadier aim.' },
+      { name: 'Spyglass Sight',  cost: 400, sway: 0.05, needs: 'boardwalk', desc: 'Dead-on aim.' },
+    ] },
     { id: 'jar', name: 'Tip jar', tiers: [
       { name: 'Paper Cup',        cost: 0,    cash: 1.0,  desc: 'No extra tips.' },
       { name: 'Glass Jar',        cost: 120,  cash: 1.2,  desc: '20% more cash every shift.' },

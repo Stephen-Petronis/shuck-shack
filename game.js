@@ -293,6 +293,8 @@
     { id: 'kitchen', name: 'Kitchen', gear: ['glove', 'aid', 'ice', 'radio', 'jar'] },
     { id: 'supplier', name: 'Supplier' },
     { id: 'diving', name: 'Diving', gear: ['fins', 'lungs', 'bag', 'dgrip'] },
+    { id: 'ice', name: 'Ice', gear: ['harpoons', 'hhead', 'boat', 'sight'] },
+    { id: 'lemons', name: 'Lemons', gear: ['lcrate', 'octo', 'octobtn'] },
   ];
   let resetArmed = false;
   let pendingLapse = null;    // set when a shift ends: the time of day moves on
@@ -629,12 +631,15 @@
   //  Tap the octopus: a lemon flies up. Swipe it fast to halve it, swipe the
   //  halves to quarter them. Every quarter = 1 wedge for lemon tips.
   // =====================================================================
+  const lemonCapN = () => tier('lcrate').cap ?? (C.lemonCap ?? 60);
+  const octoCd = () => tier('octobtn').cd ?? (C.lemonButtonCooldown ?? 1.5);
+  const tossTime = () => tier('octo').dur ?? (LT.duration ?? 15);
   const octoBtn = () => { const r = Math.max(26, Math.min(36, Math.min(W, H) * 0.06)); return { x: r + 12, y: L.top + r + 14, r }; };
   const lemonBtnOn = () => state === 'play' && G && venue().lemonButton;
   const inOcto = (x, y) => { const b = octoBtn(); return Math.hypot(x - b.x, y - b.y) <= b.r + 10; };
   function octoThrow() {
     if (!G || paused || G.lemonCd > 0) return;
-    G.lemonCd = C.lemonButtonCooldown ?? 1.5;
+    G.lemonCd = octoCd();
     const m = Math.min(W, H), g = H * 1.1, x = W * (0.2 + Math.random() * 0.6), peak = H * (0.25 + Math.random() * 0.15);
     const vy = -Math.sqrt(2 * g * (H + 40 - peak));
     G.flyLemons.push({ kind: 'whole', x, y: H + 40, vx: (W / 2 - x) * 0.25 + (Math.random() - 0.5) * m * 0.2, vy, g, r: m * 0.06, rot: 0, vr: (Math.random() - 0.5) * 5 });
@@ -658,7 +663,7 @@
       for (let k = 0; k < 6; k++) fx.splash.push({ x: p.x, y: p.y, r: 2 + Math.random() * 3, t: 0, vx: (Math.random() - 0.5) * 300, vy: (Math.random() - 0.8) * 300 });
       noise(0.08, 0.12, 2400); tone(900, 0.05, 'square', 0.04, 500);
       if (kind === 'quarter') {
-        const cap = C.lemonCap ?? 60, add = Math.max(0, Math.min(2, cap - (SAVE.lemons || 0)));
+        const cap = lemonCapN(), add = Math.max(0, Math.min(2, cap - (SAVE.lemons || 0)));
         SAVE.lemons = (SAVE.lemons || 0) + add; G.lemonsCut += add;
         fx.popups.push({ text: add ? `+${add} wedges` : 'Wedge bin full', sub: '', x: p.x, y: p.y - 30, t: 0, small: true, money: !!add, bad: !add });
       }
@@ -698,7 +703,7 @@
   }
   function drawLemonGauge() {
     if (!G) return;
-    const n = SAVE.lemons || 0, cap = C.lemonCap ?? 60, x = W - 40, y = L.top + 28, low = n <= 5;
+    const n = SAVE.lemons || 0, cap = lemonCapN(), x = W - 40, y = L.top + 28, low = n <= 5;
     const blip = Math.max(0, 1 - (T - (G.lemonBlip || -9)) / 0.35);
     ctx.save(); ctx.translate(x, y);
     ctx.fillStyle = 'rgba(29,23,18,0.78)'; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-34, -20, 64, 40, 12); else ctx.rect(-34, -20, 64, 40); ctx.fill();
@@ -731,7 +736,7 @@
     ctx.beginPath(); ctx.arc(0, 0, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     const im = IMG.lemon_whole;
     if (im) { const w = b.r * 1.3, h = w * im.height / im.width; ctx.globalAlpha = on && G.lemonCd > 0 ? 0.45 : 1; ctx.drawImage(im, -w / 2, -h / 2 - 3, w, h); ctx.globalAlpha = 1; }
-    if (on && G.lemonCd > 0) { ctx.fillStyle = 'rgba(42,20,8,0.35)'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, b.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (G.lemonCd / (C.lemonButtonCooldown ?? 1.5))); ctx.fill(); }
+    if (on && G.lemonCd > 0) { ctx.fillStyle = 'rgba(42,20,8,0.35)'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, b.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (G.lemonCd / (octoCd()))); ctx.fill(); }
     ctx.restore();
     const low = n <= 5;
     if (low && venue().lemonRequired && Math.floor(T * 2) % 2) label(on ? 'Tap for lemons!' : 'No lemons!', b.x + b.r + 58, b.y, 14, '#ff6b5b');
@@ -941,7 +946,9 @@
       const gt = GEAR_TABS.find((t) => t.id === gearTab) || GEAR_TABS[0];
       const subTabs = `<div class="subtabs" role="tablist">${GEAR_TABS.map((t) => `<button type="button" role="tab" data-gtab="${t.id}" class="${t.id === gt.id ? 'on' : ''}" aria-selected="${t.id === gt.id}">${t.name}</button>`).join('')}</div>`;
       const blurb = { knives: 'Pick the one that fits the job', kitchen: 'Gloves, first aid, ice bin, radio, tip jar',
-                      supplier: 'Where your bought oysters come from', diving: "Barry's dive gear for Barry's Dive" }[gt.id];
+                      supplier: 'Where your bought oysters come from', diving: "Barry's dive gear for Barry's Dive",
+                      ice: 'Harpoon gear for Iceberg Harpoon. More ice = more full-pay oysters',
+                      lemons: 'Octopus training and lemon storage. More wedges = more lemon tips' }[gt.id];
       h = subTabs + `<h3 class="sec">${gt.name} <span>${blurb}</span></h3>` + (gt.id === 'knives' ? knivesHtml : gt.id === 'supplier' ? supplierHtml : '') + C.gear.filter((g) => gt.gear && gt.gear.includes(g.id)).map((g) => {
         const i = SAVE.owned[g.id] || 0, curT = g.tiers[i], next = g.tiers[i + 1];
         const pic = g.id === 'knife' && KNIFE_URL[(next || curT).look] ? `<img class="knife-pic" src="${KNIFE_URL[(next || curT).look]}" alt="">` : '';
@@ -1678,7 +1685,7 @@
 
   function startLemons() {
     state = 'lemon'; phase = 'idle'; paused = false; cur = null; hurt = null;
-    M = { t: 0, intro: LT.introTime ?? 1.6, time: LT.duration ?? 40, timeLeft: LT.duration ?? 40,
+    M = { t: 0, intro: LT.introTime ?? 1.6, time: tossTime(), timeLeft: tossTime(),
           pieces: [], juice: [], slashes: [], arms: SOCKETS.map((sk, i) => ({ i, phase: 'idle', t: 0, swing: 0, hold: null })),
           spawnT: 0.4, thrown: 0, quartered: 0, quarters: 0, score: 0, combo: 0, bestCombo: 0, comboT: 0,
           dropped: 0, nextId: 1, lemons: {}, prev: null, over: false };
@@ -1904,7 +1911,7 @@
     hudLabels(['Working at', 'Shucked', 'Earned']);
     const best = M.score > (SAVE.lemonBest || 0);
     if (best) SAVE.lemonBest = M.score;
-    const wedges = Math.min(C.lemonCap ?? 60, SAVE.lemons + M.quarters) - SAVE.lemons;
+    const wedges = Math.min(lemonCapN(), SAVE.lemons + M.quarters) - SAVE.lemons;
     SAVE.lemons += wedges;
     const lvB = playerLevel().lv, rdB = SK.trees.filter((t) => perkReady(t.id)).length;
     const lemonXp = { acc: 0, spd: M.xpSpd || 0, bld: 0 };
@@ -1936,11 +1943,11 @@
   // Between shifts you pick ONE prep game. Each one stocks a different supply.
   const PREP = [
     { id: 'lemons', name: 'Lemon Toss', c: '#ffe066', why: 'Cut lemons with the octopus. More wedges = bigger tips.',
-      stat: () => `Wedges: ${SAVE.lemons || 0} / ${C.lemonCap ?? 60}`, open: () => true, go: () => startLemons() },
+      stat: () => `Wedges: ${SAVE.lemons || 0} / ${lemonCapN()}`, open: () => true, go: () => startLemons() },
     { id: 'dive', name: "Barry's Dive", c: '#7be0ff', why: 'Catch your own oysters. Skip the supplier bill = more profit.',
       stat: () => `Cooler: ${stockCount()} / ${C.stockCap ?? 40}`, open: () => diveOpen(), go: () => startDive() },
-    { id: 'ice', name: 'Iceberg Harpoon', c: '#cfeaff', why: '3 harpoons: knock the most ice off the berg. Ice keeps oysters cold = full pay.',
-      stat: () => `Ice: ${SAVE.ice || 0} / ${C.iceCap ?? 50}`, open: () => true, go: () => startIce() },
+    { id: 'ice', name: 'Iceberg Harpoon', c: '#cfeaff', why: 'Harpoon the iceberg: knock the most ice loose. Ice keeps oysters cold = full pay.',
+      stat: () => `Ice: ${SAVE.ice || 0} / ${iceCap()}`, open: () => true, go: () => startIce() },
     { id: 'sauce', name: 'Cocktail Sauce', c: '#ff8a7a', why: 'Coming soon: mix sauce for shrimp cocktail orders.', soon: true },
     { id: 'sharpen', name: 'Knife Sharpening', c: '#cfd8dc', why: 'Coming soon: a sharp knife flicks barnacles easier.', soon: true },
   ];
@@ -2551,12 +2558,17 @@
   // =====================================================================
   //  MINI GAME: ICEBERG HARPOON
   //  The berg is a web of ice chunks. The bottom row is frozen into the sea.
-  //  Barry gets 3 harpoons. A hit rips out that chunk (and anything joined to it
+  //  Barry gets 1+ harpoons (buy more in Gear > Ice). A hit rips out that chunk (and anything joined to it
   //  by a CRACKED line). Anything no longer connected to the bottom falls off.
   //  Every chunk you knock loose = 1 bag of ice.
   // =====================================================================
   const IC = C.iceHarpoon || {};
   let I = null;
+  const harpoonN = () => tier('harpoons').n ?? 1;
+  const iceImpact = () => tier('hhead').impact ?? 0;
+  const iceSway = () => tier('sight').sway ?? (IC.sway ?? 0.35);
+  const iceCap = () => tier('boat').cap ?? (C.iceCap ?? 50);
+  const bergSize = () => { const b = tier('boat'); return { rows: b.rows ?? IC.rows ?? 11, cols: b.cols ?? IC.cols ?? 9, min: b.min ?? IC.minChunks ?? 45, max: b.max ?? IC.maxChunks ?? 75 }; };
   const iceNeeded = () => C.venues.indexOf(venue()) >= C.venues.findIndex((v) => v.id === (C.iceFrom || 'boardwalk'));
   function hexNb(r, c) {
     const o = r % 2;
@@ -2566,13 +2578,14 @@
     let best = null;
     for (let t = 0; t < 30; t++) {
       const b = rollBerg(), n = b.cells.size;
-      if (n >= (IC.minChunks ?? 45) && n <= (IC.maxChunks ?? 75)) return b;
-      if (!best || Math.abs(n - 55) < Math.abs(best.cells.size - 55)) best = b;
+      const bs = bergSize(), mid = (bs.min + bs.max) / 2;
+      if (n >= bs.min && n <= bs.max) return b;
+      if (!best || Math.abs(n - mid) < Math.abs(best.cells.size - mid)) best = b;
     }
     return best;
   }
   function rollBerg() {
-    const rows = IC.rows ?? 9, cols = IC.cols ?? 9, cells = new Map(), key = (r, c) => r * 100 + c;
+    const rows = bergSize().rows, cols = bergSize().cols, cells = new Map(), key = (r, c) => r * 100 + c;
     // bottom row: frozen into the sea
     const b0 = 1 + Math.floor(Math.random() * 2), b1 = cols - 2 - Math.floor(Math.random() * 2);
     for (let c = b0; c <= b1; c++) cells.set(key(rows - 1, c), { r: rows - 1, c, anchor: true });
@@ -2625,6 +2638,9 @@
   function iceHit(berg, cells, k0) {
     const { key, bk, bonds } = berg;
     const smash = new Set([k0]), q = [k0];
+    // bigger harpoon heads smash more around the hit: 1 = the chunks left and right, 2 = every neighbor
+    const imp = iceImpact(), x0 = cells.get(k0);
+    if (imp > 0) hexNb(x0.r, x0.c).forEach(([r, c], i) => { if (imp >= 2 || i < 2) { const k2 = key(r, c); if (cells.has(k2) && !smash.has(k2)) { smash.add(k2); q.push(k2); } } });
     while (q.length) {   // cracked lines break along with the chunk you hit
       const k = q.pop(), x = cells.get(k);
       hexNb(x.r, x.c).forEach(([r, c]) => { const k2 = key(r, c); if (cells.has(k2) && !smash.has(k2) && bonds.get(bk(k, k2)) === 'crack') { smash.add(k2); q.push(k2); } });
@@ -2637,7 +2653,7 @@
   }
   function icePar(berg) {   // Barry's own best guess: greedy, one throw at a time
     let cells = berg.cells, total = 0;
-    for (let n = 0; n < (IC.harpoons ?? 3); n++) {
+    for (let n = 0; n < harpoonN(); n++) {
       let best = null;
       cells.forEach((_, k) => { const h = iceHit(berg, cells, k); const g = h.smash.length + h.fall.length; if (!best || g > best.g) best = { g, h }; });
       if (!best) break; total += best.g; cells = best.h.left;
@@ -2654,7 +2670,7 @@
   function startIce() {
     state = 'ice'; phase = 'idle'; paused = false; cur = null; hurt = null; M = null; V = null;
     const berg = makeBerg();
-    I = { t: 0, intro: 2.2, berg, cells: berg.cells, start: berg.cells.size, left: IC.harpoons ?? 3, got: 0, par: icePar(berg),
+    I = { t: 0, intro: 2.2, berg, cells: berg.cells, start: berg.cells.size, left: harpoonN(), max: harpoonN(), got: 0, par: icePar(berg),
           aim: null, shot: null, bits: [], floats: [], flash: [], over: false, endT: null };
     showScreen(null);
     hudLabels(['Mini game', 'Harpoons', 'Ice']);
@@ -2663,16 +2679,16 @@
     tone(200, 0.4, 'triangle', 0.06, 120); noise(0.5, 0.08, 400);
   }
   function iceHud() {
-    els.count.textContent = '↑'.repeat(0) + `${I.left} / ${IC.harpoons ?? 3}`;
+    els.count.textContent = `${I.left} / ${I.max}`;
     els.earned.textContent = String(I.got);
-    const f = I.left / (IC.harpoons ?? 3);
-    els.clockFill.style.transform = `scaleX(${f})`; els.clockFill.dataset.low = I.left <= 1 ? '1' : '0';
+    const f = I.left / I.max;
+    els.clockFill.style.transform = `scaleX(${f})`; els.clockFill.dataset.low = I.left <= 1 && I.max > 1 && I.left < I.max ? '1' : '0';
     els.clockText.textContent = `Par ${I.par}`;
   }
   function iceAimAt(x, y) { if (I && !I.over) I.aim = { x, y: y - (pointer.type === 'mouse' ? 0 : 70) }; }
   function iceThrow() {
     if (!I || !I.aim || I.shot || I.left <= 0 || I.t < I.intro) { if (I) I.aim = null; return; }
-    const g = iceGeom(), sway = g.cr * (IC.sway ?? 0.35);
+    const g = iceGeom(), sway = g.cr * iceSway();
     const tx = I.aim.x + Math.sin(T * 4.3) * sway, ty = I.aim.y + Math.cos(T * 3.1) * sway * 0.6;
     I.shot = { t: 0, dur: 0.55, fx: W / 2, fy: H - 120, tx, ty };
     I.left--; I.aim = null; iceHud();
@@ -2758,8 +2774,22 @@
     I.floats.forEach((f) => { ctx.save(); ctx.translate(f.x, f.y + Math.sin(T * 2 + f.x) * 2); ctx.rotate(f.rot); ctx.globalAlpha = Math.max(0, 1 - f.t / 2.5); iceHex(0, 0, f.cr * 0.6); ctx.fillStyle = '#e6f6ff'; ctx.fill(); ctx.restore(); });
     // Barry from behind on his ice floe
     const bx = W / 2, by = H - 100;
-    ctx.fillStyle = '#eaf6ff'; ctx.strokeStyle = '#2f6f9e'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.ellipse(bx, by + 36, 90, 22, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    const boatLv = SAVE.owned.boat || 0;
+    if (boatLv === 0) {   // ice floe
+      ctx.fillStyle = '#eaf6ff'; ctx.strokeStyle = '#2f6f9e'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(bx, by + 36, 90, 22, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    } else {              // rowboat (wood) or tug boat (red, with a cabin + stack)
+      const tug = boatLv >= 2, bw = tug ? 120 : 100;
+      if (tug) {
+        ctx.fillStyle = '#f3ead8'; ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 3;
+        ctx.fillRect(bx - bw * 0.85, by - 10, 44, 40); ctx.strokeRect(bx - bw * 0.85, by - 10, 44, 40);
+        ctx.fillStyle = '#2a1408'; ctx.fillRect(bx - bw * 0.75, by - 34, 14, 26);
+        ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.arc(bx - bw * 0.7 + Math.sin(T) * 4, by - 46 - (T * 20 % 20), 8, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = tug ? '#d9534f' : '#9b6b3d'; ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(bx - bw, by + 20); ctx.lineTo(bx + bw, by + 20); ctx.lineTo(bx + bw * 0.8, by + 52); ctx.lineTo(bx - bw * 0.8, by + 52); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = tug ? '#fff3d6' : '#6e4a32'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(bx - bw * 0.92, by + 30); ctx.lineTo(bx + bw * 0.92, by + 30); ctx.stroke();
+    }
     ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 3;
     ctx.fillStyle = '#9b6a48'; ctx.beginPath(); ctx.ellipse(bx, by + 6, 34, 36, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#a8775a'; ctx.beginPath(); ctx.arc(bx, by - 34, 22, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
@@ -2784,14 +2814,14 @@
     }
     // aim: crosshair (sways a little; better aim takes practice)
     if (I.aim && !I.shot) {
-      const sway = g.cr * (IC.sway ?? 0.35), ax = I.aim.x + Math.sin(T * 4.3) * sway, ay = I.aim.y + Math.cos(T * 3.1) * sway * 0.6;
+      const sway = g.cr * iceSway(), ax = I.aim.x + Math.sin(T * 4.3) * sway, ay = I.aim.y + Math.cos(T * 3.1) * sway * 0.6;
       ctx.save(); ctx.strokeStyle = '#d9534f'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(ax, ay, g.cr * 0.6, 0, Math.PI * 2); ctx.moveTo(ax - g.cr, ay); ctx.lineTo(ax + g.cr, ay); ctx.moveTo(ax, ay - g.cr); ctx.lineTo(ax, ay + g.cr); ctx.stroke();
       ctx.setLineDash([6, 8]); ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(bx + 26, by - 20); ctx.quadraticCurveTo((bx + ax) / 2, Math.min(by, ay) - H * 0.1, ax, ay); ctx.stroke(); ctx.restore();
     }
     // harpoons left
-    for (let i = 0; i < (IC.harpoons ?? 3); i++) {
+    for (let i = 0; i < I.max; i++) {
       const hx = 26 + i * 22, hy = H - 60, on = i < I.left;
       ctx.strokeStyle = on ? '#6b4a2a' : 'rgba(0,0,0,0.25)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(hx, hy + 30); ctx.lineTo(hx, hy - 10); ctx.stroke();
       ctx.fillStyle = on ? '#c9d3dc' : 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.moveTo(hx - 6, hy - 10); ctx.lineTo(hx, hy - 24); ctx.lineTo(hx + 6, hy - 10); ctx.closePath(); ctx.fill();
@@ -2809,7 +2839,7 @@
       ctx.save(); ctx.translate(W / 2, H * 0.3); ctx.scale(sc, sc);
       ctx.fillStyle = 'rgba(29,23,18,0.8)'; ctx.fillRect(-W * 0.45, -60, W * 0.9, 130);
       label('ICEBERG HARPOON', 0, -24, Math.min(W, H) * 0.08, '#7be0ff');
-      label('3 harpoons. Hit the weak spots:', 0, 16, 18, '#fff3d6');
+      label(`${I.max} harpoon${I.max === 1 ? '' : 's'}. Hit the weak spots:`, 0, 16, 18, '#fff3d6');
       label("anything not hanging on to the bottom falls off!", 0, 42, 16, '#fff3d6');
       ctx.restore();
     }
@@ -2817,7 +2847,7 @@
   function endIce() {
     I.over = true; state = 'result';
     hudLabels(['Working at', 'Shucked', 'Earned']);
-    const cap = C.iceCap ?? 50, add = Math.max(0, Math.min(I.got, cap - (SAVE.ice || 0)));
+    const cap = iceCap(), add = Math.max(0, Math.min(I.got, cap - (SAVE.ice || 0)));
     SAVE.ice = (SAVE.ice || 0) + add;
     const beat = I.got >= I.par, xp = Math.round(I.got * 0.6) + (beat ? 15 : 0);
     SAVE.xp.acc += xp; SAVE.xpTotal = (SAVE.xpTotal || 0) + xp;
@@ -2827,7 +2857,8 @@
     $('resultTitle').textContent = beat ? (I.got > I.par ? 'Better than Barry!' : 'Iceberg master!') : `Knocked loose: ${I.got}`;
     $('resultTag').textContent = 'Into the ice bin';
     $('resultBody').innerHTML = `
-      <p class="sub">${I.got} of ${I.start} chunks with 3 harpoons</p>
+      <p class="sub">${I.got} of ${I.start} chunks with ${I.max} harpoon${I.max === 1 ? '' : 's'}</p>
+      <p class="fine">Want more ice? Gear &rarr; Ice: more harpoons, bigger heads, a bigger boat.</p>
       <div class="receipt">
         ${row('Ice knocked loose', I.got)}
         ${row("Barry's par", I.par)}
@@ -2848,7 +2879,7 @@
   }
   function drawIceGauge() {
     if (!G || !iceNeeded()) return;
-    const n = SAVE.ice || 0, cap = C.iceCap ?? 50, x = W - 40, y = L.top + 74, low = n <= 3;
+    const n = SAVE.ice || 0, cap = iceCap(), x = W - 40, y = L.top + 74, low = n <= 3;
     const blip = Math.max(0, 1 - (T - (G.iceBlip || -9)) / 0.35);
     ctx.save(); ctx.translate(x, y);
     ctx.fillStyle = 'rgba(29,23,18,0.78)'; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-34, -20, 64, 40, 12); else ctx.rect(-34, -20, 64, 40); ctx.fill();
