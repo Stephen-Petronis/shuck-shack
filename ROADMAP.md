@@ -118,7 +118,8 @@ Oysters have to come from somewhere, and that's the choice between shifts:
 - Unlocks after you finish the story. You open your own Barry's franchise.
 - The challenge: always 30 seconds, shuck as many as you can. That's THE high score of the game.
 - You can still upgrade your shop and play the prep mini games between runs to push the score up.
-- Maybe name your restaurant (careful with free-text names in a kids' game: a pick-list of funny names may be safer).
+- No naming. Every franchise is just "Barry's Oyster Shack" (with a location number, like #27). A web game can't read
+  the phone's user name; if it ever ships as an iPhone app, the Game Center name could go on the scoreboard.
 - Later: run 2, then 4, then 6 shucking windows at once. Everything gets smaller and harder; tap a window to zoom in.
 
 ## Orders — DONE
