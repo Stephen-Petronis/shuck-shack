@@ -69,7 +69,8 @@ Oysters have to come from somewhere, and that's the choice between shifts:
 
 ## Prep time: pick your mini game — DONE (first pass)
 - After every shift you pick ONE prep game. Each one feeds a different supply, so the choice is the strategy.
-  - **Lemon Toss** → lemon wedges. Every oyster served with a wedge earns a lemon tip. Fewer lemons, fewer tips.
+  - **Lemon Toss** → lemon wedges. Customers squeeze them nonstop all shift (faster as it gets busy). Any oyster
+    served while you still have lemons earns a lemon tip. Fewer lemons, fewer tips.
     From Pier 9 on, an oyster with no lemon only pays half.
   - **Barry's Dive** → your own oysters in the cooler. They get shucked first and cost nothing; supplier oysters
     come off your pay. Small ones carry more barnacles; big ones pay 1.5×.
@@ -85,6 +86,20 @@ Oysters have to come from somewhere, and that's the choice between shifts:
 - Every expedition has its own mini game. Beat it and you unlock the prize. Lose and the money's gone: pay again
   to go back and try again. ("Mental is metal.")
 - Make leveling stretch out so it feels earned; the tip jar stays, expeditions sit on top as the big money sink.
+
+## Ice (next resource) — IDEAS, pick one
+- What ice does: keeps the cooler oysters fresh and the raw bar looking good. It melts all shift like lemons drain.
+  Run out and cooler oysters spoil / customers pay less.
+- Mini game ideas:
+  - **Harpoon the iceberg** (Stephen's): artillery-style. Set angle + power, lob a harpoon over the water at
+    drifting icebergs (far = bigger chunk). Wind, waves, and seals in the way.
+  - **Chip the block**: a giant ice block with crack lines; swipe along the cracks to chip off cubes into a bucket.
+    Hit wrong and it shatters into slush.
+  - **Barry's belly slide**: Barry slides down a glacier collecting ice chunks, dodging rocks and penguins.
+  - Combo: harpoon a berg, tow it back, then chip it.
+
+## Franchise mode (Stephen's idea) — TODO
+- Run 2, then 4, then 6 shucking windows at once. Everything gets smaller and harder; tap a window to zoom in.
 
 ## The whole raw bar (long-term)
 - Lemons and oysters at the same time: one finger slicing lemons, one shucking.

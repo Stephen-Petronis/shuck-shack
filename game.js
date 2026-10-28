@@ -254,7 +254,9 @@
     L.cx = ox + BG.boardCx * s;
     L.cy = oy + BG.boardCy * s;
     const room = Math.min(L.cy - top - 8, H - 12 - L.cy, L.cx, W - L.cx) * 2 / 1.25;
-    if (room > 120 && L.D > room) { L.D = room; L.tol = Math.max(C.minTolerancePx, L.D * C.traceTolerance); }
+    if (room > 120 && L.D > room) L.D = room;
+    L.D *= C.oysterScale ?? 0.75;   // oysters sit smaller than the board
+    L.tol = Math.max(C.minTolerancePx, L.D * C.traceTolerance);
 
     const n = BG.napkin;
     const nx = ox + n.x * s, ny = oy + n.y * s, nw = n.w * s, nh = n.h * s;
@@ -500,7 +502,7 @@
     if (!bloody && o.src === 'big') pay = Math.round(pay * (C.bigOysterPay ?? 1.5));
     let lemonTip = 0, lemonNote = '';
     if (!bloody) {
-      if (SAVE.lemons > 0) { SAVE.lemons--; lemonTip = Math.max(1, Math.round(G.venue.pay * (C.lemonTip ?? 0.5))); G.lemonTips += lemonTip; G.lemoned++; lemonNote = 'lemon tip!'; }
+      if (SAVE.lemons > 0) { lemonTip = Math.max(1, Math.round(G.venue.pay * (C.lemonTip ?? 0.5))); G.lemonTips += lemonTip; G.lemoned++; lemonNote = 'lemon tip!'; }
       else if (G.venue.lemonRequired) { pay = Math.max(1, Math.round(pay * 0.5)); G.noLemon++; lemonNote = 'no lemon? half pay'; }
     }
     G.pay += pay; G.tips += tip; if (tip) G.fast++;
@@ -562,6 +564,7 @@
         ${row(`Oysters (${G.done})`, money(G.pay))}
         ${row(`Speedy tips (${G.fast})`, money(G.tips))}
         ${G.lemoned ? row(`Lemon tips (${G.lemoned})`, money(G.lemonTips)) : ''}
+        ${G.lemonsUsed ? row('Lemon wedges squeezed', G.lemonsUsed) : ''}
         ${row(finished ? 'Time left bonus' : 'Time left bonus (late)', money(bonus))}
         ${jar ? row(`${tier('jar').name}`, money(jar)) : ''}
         ${G.bloodLoss ? row(`Bloody oysters (${G.bloody})`, '-' + money(G.bloodLoss), 'neg') : ''}
@@ -671,6 +674,34 @@
     });
     G.flyLemons = G.flyLemons.filter((p) => !p.gone);
   }
+  // Customers squeeze lemons nonstop: the wedge pile keeps going down all shift, faster as it gets busy.
+  function lemonRate() {
+    const v = venue(), i = C.venues.indexOf(v);
+    const base = v.lemonDrain ?? (C.lemonDrain || [0.18, 0.24, 0.32, 0.42, 0.55])[Math.min(i, 4)];
+    const prog = G ? Math.min(1, G.done / Math.max(1, G.need)) : 0;
+    return base * (1 + (C.lemonRush ?? 0.6) * prog);
+  }
+  function drainLemons(dt) {
+    if (!SAVE.lemons) return;
+    G.lemonAcc = (G.lemonAcc || 0) + lemonRate() * dt;
+    while (G.lemonAcc >= 1 && SAVE.lemons > 0) { G.lemonAcc -= 1; SAVE.lemons--; G.lemonsUsed = (G.lemonsUsed || 0) + 1; G.lemonBlip = T; }
+    if (!SAVE.lemons) fx.popups.push({ text: 'Out of lemons!', sub: venue().lemonRequired ? 'half pay until you get more' : 'no more lemon tips', x: L.cx, y: L.top + 70, t: 0, small: true, bad: true });
+  }
+  function drawLemonGauge() {
+    if (!G) return;
+    const n = SAVE.lemons || 0, cap = C.lemonCap ?? 60, x = W - 40, y = L.top + 28, low = n <= 5;
+    const blip = Math.max(0, 1 - (T - (G.lemonBlip || -9)) / 0.35);
+    ctx.save(); ctx.translate(x, y);
+    ctx.fillStyle = 'rgba(29,23,18,0.78)'; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-34, -20, 64, 40, 12); else ctx.rect(-34, -20, 64, 40); ctx.fill();
+    const im = IMG.lemon_quarter_a;
+    if (im) { const w = 26 * (1 + blip * 0.25), h = w * im.height / im.width; ctx.drawImage(im, -30, -h / 2, w, h); }
+    // little bar = how full the wedge pile is
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(-4, 10, 28, 4);
+    ctx.fillStyle = low ? '#ff6b5b' : '#ffe066'; ctx.fillRect(-4, 10, 28 * Math.min(1, n / cap), 4);
+    ctx.restore();
+    label(String(n), x + 10, y - 3, 17, low && Math.floor(T * 4) % 2 ? '#ff6b5b' : '#fff3d6');
+    if (blip > 0) label('-1', x + 10, y - 22 - (1 - blip) * 10, 13, `rgba(255,107,91,${blip})`);
+  }
   function drawOcto() {
     if (!G) return;
     const b = octoBtn(), on = venue().lemonButton, n = SAVE.lemons || 0;
@@ -693,12 +724,7 @@
     if (im) { const w = b.r * 1.3, h = w * im.height / im.width; ctx.globalAlpha = on && G.lemonCd > 0 ? 0.45 : 1; ctx.drawImage(im, -w / 2, -h / 2 - 3, w, h); ctx.globalAlpha = 1; }
     if (on && G.lemonCd > 0) { ctx.fillStyle = 'rgba(42,20,8,0.35)'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, b.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (G.lemonCd / (C.lemonButtonCooldown ?? 1.5))); ctx.fill(); }
     ctx.restore();
-    // wedge count badge
-    const low = n === 0;
-    ctx.save(); ctx.translate(b.x + b.r * 0.75, b.y + b.r * 0.7);
-    ctx.fillStyle = low ? '#ff6b5b' : '#2a1408'; ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-    label(String(n), b.x + b.r * 0.75, b.y + b.r * 0.7, 14, '#fff3d6');
+    const low = n <= 5;
     if (low && venue().lemonRequired && Math.floor(T * 2) % 2) label(on ? 'Tap for lemons!' : 'No lemons!', b.x + b.r + 58, b.y, 14, '#ff6b5b');
   }
   function drawFly() {
@@ -1157,6 +1183,7 @@
     T += dt;
     if (state === 'play' && !paused) {
       updateFly(dt);
+      if (phase !== 'ready') drainLemons(dt);
       if (phase === 'ready') {
         if (T - readyT >= C.orderUpTime) nextOyster();
       } else {
@@ -1577,7 +1604,7 @@
       drawOysterImg(fx.lid.shape + '_top', fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5);
       drawEyes(fx.lid.shape, fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5, 9);
     }
-    if (state === 'play') { drawFly(); if (venue().lemonButton) drawOcto(); }
+    if (state === 'play') { drawFly(); if (venue().lemonButton) drawOcto(); drawLemonGauge(); }
     drawArm();
     if (state === 'play' && phase === 'ready' && !paused) drawOrderUp();
     drawStamp();

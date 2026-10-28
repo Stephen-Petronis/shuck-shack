@@ -145,7 +145,10 @@ window.SHUCK_CONFIG = {
   // ---------------- Lemons and oyster supply ----------------
   // Lemon Toss stocks lemon wedges. Every oyster served with a lemon earns a lemon tip.
   // Oysters come from your own catch first (free, from Barry's Dive), then the supplier (costs money).
-  lemonTip: 0.5,               // lemon tip = restaurant pay x this, per oyster served with a lemon
+  oysterScale: 0.75,           // oyster size on the board (1 = old size)
+  lemonTip: 0.5,               // lemon tip = restaurant pay x this, per oyster served while you HAVE lemons
+  lemonDrain: [0.18, 0.24, 0.32, 0.42, 0.55],  // wedges squeezed per second, per restaurant (customers never stop)
+  lemonRush: 0.6,              // drain speeds up this much (60%) by the end of the order
   lemonCap: 60,                // most lemon wedges you can keep
   oysterCost: 0.4,             // supplier price per oyster = restaurant pay x this (x1.25 per supplier upgrade)
   bigOysterPay: 1.5,           // big oysters you caught yourself sell for this much more
