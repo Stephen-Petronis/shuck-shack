@@ -5,6 +5,7 @@ window.SHUCK_CONFIG = {
 
   // ---------------- Career ----------------
   startCash: 0,
+  devMode: true,               // shows "Dev mode" on the title screen (pick restaurant, add cash); set false to hide
   levelSkipper: true,          // shows "Level skipper" in the Move up tab (for testing); set false to hide
 
   // Restaurants, in order. Each shift is one order. Moving up costs cash.

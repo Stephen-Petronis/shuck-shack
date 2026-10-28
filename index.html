@@ -230,6 +230,15 @@
   .dock .btn { width: 100%; box-shadow: 0 5px 0 var(--ink), 0 10px 24px rgba(29,23,18,.45); }
   body.in-hub .hud-btns { bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); }
   #screenHub { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); }
+
+  /* Dev mode */
+  .devlist { display: grid; gap: 6px; }
+  .devlist button { display: flex; justify-content: space-between; align-items: center; gap: 8px; font: 400 17px/1.1 var(--display); text-align: left; color: var(--ink); background: #fffaf0; border: 2px solid var(--ink); border-radius: 10px; padding: 9px 12px; cursor: pointer; }
+  .devlist button.on { background: var(--mustard); }
+  .devlist button span { font: 800 11px/1 var(--body); color: var(--muted); }
+  .devrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .devrow .btn { font-size: 17px; padding: 10px 8px; }
+  #btnDevInf[aria-pressed="true"] { background: #8df27a; }
   /* Toast */
   #toast { position: absolute; z-index: 6; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); transform: translateX(-50%);
     background: var(--ink); color: var(--mustard); border: 3px solid var(--mustard); border-radius: 12px; padding: 10px 16px;
@@ -276,6 +285,7 @@
       <hr class="rule">
       <button class="btn" id="btnStart" type="button">Open the shack</button>
       <p class="save-line" id="titleSave"></p>
+      <button class="linkbtn" id="btnDev" type="button" hidden>Dev mode</button>
       <a class="arcade-link" href="#" hidden>Back to Monster Pizza</a>
     </div>
   </section>
@@ -304,6 +314,23 @@
       <canvas id="tipArt" width="260" height="130" style="width:260px;height:130px;max-width:100%;align-self:center"></canvas>
       <p class="sub" id="tipText"></p>
       <button class="btn" id="btnTipOk" type="button">Got it!</button>
+    </div>
+  </section>
+
+  <section class="screen" id="screenDev" hidden>
+    <div class="ticket">
+      <div class="ticket-meta"><span>Dev mode</span><span class="stamp">Testing</span></div>
+      <h2>Dev mode</h2>
+      <p class="fine">Jump to any restaurant (everything before it opens, with 5 stars).</p>
+      <div class="devlist" id="devVenues"></div>
+      <hr class="rule">
+      <div class="devrow">
+        <button class="btn" id="btnDevCash" type="button">+$10,000</button>
+        <button class="btn ghost" id="btnDevInf" type="button" aria-pressed="false">Infinite cash: off</button>
+      </div>
+      <p class="fine" id="devCashLine"></p>
+      <button class="btn" id="btnDevGo" type="button">Go to the shack</button>
+      <button class="btn ghost" id="btnDevBack" type="button">Back</button>
     </div>
   </section>
 

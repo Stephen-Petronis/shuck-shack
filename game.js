@@ -520,7 +520,7 @@
     ['acc', 'spd', 'bld'].forEach((k) => { SAVE.xp[k] += G.xp[k]; SAVE.xpTotal = (SAVE.xpTotal || 0) + G.xp[k]; });
     const lvAfter = playerLevel().lv;
     const readyNow = SK.trees.filter((t) => perkReady(t.id));
-    SAVE.cash += total; SAVE.shifts += 1; SAVE.oysters += G.done; SAVE.cuts += G.cuts;
+    SAVE.cash += total; keepInfinite(); SAVE.shifts += 1; SAVE.oysters += G.done; SAVE.cuts += G.cuts;
     const best = total > SAVE.bestShift; if (best) SAVE.bestShift = total;
     writeSave();
     state = 'result'; phase = 'idle'; hurt = null; paused = false; pointer.tracing = false;
@@ -628,6 +628,7 @@
     els.result.hidden = which !== 'result';
     els.pause.hidden = which !== 'pause';
     $('screenTip').hidden = which !== 'tip';
+    $('screenDev').hidden = which !== 'dev';
     document.body.classList.toggle('in-hub', which === 'hub');
     const dockBtn = document.querySelector('#hubDock .btn');
     if (dockBtn) dockBtn.textContent = SAVE.shifts ? 'Back to work!' : 'Start your first shift!';
@@ -638,6 +639,8 @@
   }
 
   function refreshTitle() {
+    keepInfinite();
+    $('btnDev').hidden = !(C.devMode ?? true);
     const has = SAVE.shifts > 0;
     els.btnStart.textContent = has ? 'Back to work' : 'Open the shack';
     els.titleSave.textContent = has ? `${venue().name} · ${money(SAVE.cash)} · ${SAVE.shifts} shift${SAVE.shifts === 1 ? '' : 's'} worked` : '';
@@ -687,7 +690,9 @@
     showScreen('hub');
   }
 
+  const keepInfinite = () => { if (SAVE.infiniteCash) SAVE.cash = 999999; };
   function renderHub() {
+    keepInfinite();
     const v = venue();
     els.hubCash.textContent = money(SAVE.cash);
     els.hubVenue.textContent = v.name;
@@ -930,6 +935,30 @@
     paused = p; pointer.tracing = false;
     showScreen(p ? 'pause' : null);
   }
+
+  // ---- Dev mode (title screen): pick a restaurant, add cash ----
+  function renderDev() {
+    keepInfinite();
+    $('devVenues').innerHTML = C.venues.map((v, i) => `<button type="button" data-dev="${i}" class="${SAVE.venue === v.id ? 'on' : ''}">${i + 1}. ${v.name}<span>${SAVE.venue === v.id ? 'HERE' : SAVE.unlocked.includes(v.id) ? 'OPEN' : 'LOCKED'}</span></button>`).join('');
+    $('btnDevInf').textContent = `Infinite cash: ${SAVE.infiniteCash ? 'on' : 'off'}`;
+    $('btnDevInf').setAttribute('aria-pressed', String(!!SAVE.infiniteCash));
+    $('devCashLine').textContent = `Cash: ${money(SAVE.cash)}`;
+  }
+  $('btnDev').addEventListener('click', () => { audio(); renderDev(); showScreen('dev'); });
+  $('devVenues').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-dev]'); if (!b) return;
+    const i = +b.dataset.dev;
+    C.venues.forEach((v, k) => {
+      if (k <= i && !SAVE.unlocked.includes(v.id)) SAVE.unlocked.push(v.id);
+      if (k < i) SAVE.rep[v.id] = Math.max(repOf(v.id), C.starsToUnlock);
+    });
+    SAVE.venue = C.venues[i].id; writeSave(); SFX.slide(); renderDev(); refreshTitle();
+    flash(`Now working at ${C.venues[i].name}`);
+  });
+  $('btnDevCash').addEventListener('click', () => { SAVE.cash += 10000; writeSave(); SFX.cash(); renderDev(); refreshTitle(); });
+  $('btnDevInf').addEventListener('click', () => { SAVE.infiniteCash = !SAVE.infiniteCash; writeSave(); SFX.slide(); renderDev(); refreshTitle(); });
+  $('btnDevGo').addEventListener('click', () => { audio(); openHub('work'); });
+  $('btnDevBack').addEventListener('click', () => { refreshTitle(); showScreen('title'); });
 
   els.btnStart.addEventListener('click', () => { audio(); if ((SAVE.owned.radio || 0) >= 1 && SAVE.radio >= 0 && SAVE.radio !== undefined && !RADIO.on && SAVE.radioWasOn) setRadio(SAVE.radio); openHub('work'); });
   $('btnBackToShack').addEventListener('click', (e) => {
