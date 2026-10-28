@@ -15,6 +15,27 @@ and each restaurant teaches one new thing before the next one stacks on top.
 - **Diving for oysters** mini game (TODO). You collect your own oysters for the day, which is why they
   have barnacles. Alternates with Lemon Toss to start; later, how many you catch = your inventory.
 
+## Oyster supply: buy it or catch it yourself (design)
+Oysters have to come from somewhere, and that's the choice between shifts:
+- **Pay the supplier.** Upgrading the supplier (already in the game) means cleaner, pricier oysters, but it
+  costs money every shift.
+- **Catch them yourself in Barry's Dive.** It's cheaper: every oyster you catch is one you don't have to buy,
+  so diving always subsidizes the supplier bill, even after you've upgraded the supplier.
+- Skip diving and the oysters you get are the small, easy, cheap ones, which come with more barnacles.
+- **Oyster size:** small ones are easy to grab but barnacle-y and cheap. Big ones are worth more money and
+  fewer barnacles, but they get away fast: you have to smash the DIVE/GRAB button to hold on, and at
+  first you basically can't land them until you buy better dive gear.
+- **Dive gear (Gear tab):** flippers (swim faster), bigger lungs (more breath), bigger flipper bag, longer
+  dive clock, stronger grip for big oysters. Could also be its own skill tree.
+- Late game you can lean on a great supplier and dive less, but diving stays worth doing.
+- Long-term goal: keep stacking jobs until it's a big multitasking game: dive, chop lemons, shuck,
+  and eventually run the whole raw bar.
+
+## Barry's Dive (mini game) — blueprint in docs/diving-blueprint.png
+- Top-down like Animal Crossing. Barry the walrus paddles on the surface; shadows and bubbles show what's
+  below; DIVE on a shadow. Lungs instead of an air tank; flipper bag; dock to drop off; jellyfish and currents.
+- Big oysters flee: smash the button to catch them (see Oyster supply above).
+
 ## Stage 3: Pier 9 — TODO
 - **Timer mode:** no more fixed orders. Shuck as many as you can before the clock runs out.
 - **Pearls and pea crabs:** sometimes something shows up inside an opened oyster for a very short
