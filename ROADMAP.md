@@ -67,6 +67,25 @@ Oysters have to come from somewhere, and that's the choice between shifts:
 - Each restaurant has its own supplier to upgrade: fewer barnacles and oysters sell for more.
 - TODO: new, harder oyster shapes from better (or weirder) suppliers.
 
+## Prep time: pick your mini game — DONE (first pass)
+- After every shift you pick ONE prep game. Each one feeds a different supply, so the choice is the strategy.
+  - **Lemon Toss** → lemon wedges. Every oyster served with a wedge earns a lemon tip. Fewer lemons, fewer tips.
+    From Pier 9 on, an oyster with no lemon only pays half.
+  - **Barry's Dive** → your own oysters in the cooler. They get shucked first and cost nothing; supplier oysters
+    come off your pay. Small ones carry more barnacles; big ones pay 1.5×.
+  - Coming: Cocktail Sauce, Knife Sharpening, and more. Later the menu fills up based on what you did that shift.
+- **Octopus lemon button** (Pier 9 and up): tap the octopus during a shift, a lemon flies up, slice it to halves and
+  then quarters with any finger. Each quarter = 1 wedge. The multitasking starts here.
+- Dive gear in the shop: Flippers (swim speed), Lungs (breath), Flipper bag (how many you carry), Dive grip (big oysters).
+- TODO: real art for Barry, the water and the junk (placeholders now); shrimp cocktail building during shifts.
+
+## Expeditions (Stephen's idea) — TODO
+- Spend big money on a trip — part vacation, part Anthony Bourdain adventure. You don't know what you'll find
+  until you pay for it: rare knives and one-of-a-kind gear only come from expeditions.
+- Every expedition has its own mini game. Beat it and you unlock the prize. Lose and the money's gone: pay again
+  to go back and try again. ("Mental is metal.")
+- Make leveling stretch out so it feels earned; the tip jar stays, expeditions sit on top as the big money sink.
+
 ## The whole raw bar (long-term)
 - Lemons and oysters at the same time: one finger slicing lemons, one shucking.
 - Then add shrimp cocktail, cherrystone clams, and more, until by the end you run a whole raw bar at once.

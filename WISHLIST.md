@@ -10,12 +10,13 @@ Ideas parked for later. Say "what's next?" and pick from here.
 ## In the oysters
 - Pearls, barnacles and pea crabs: now planned in ROADMAP.md (barnacles are in).
 
-## More mini games (picked at random after a shift, like Lemon Toss)
+## More mini games (you pick one after each shift; each stocks a different supply)
 - **Diving for oysters** (planned for Stage 2, see ROADMAP.md).
 - **Sharpening your knife.**
 - **Shooing away the seagulls.**
 
 ## Bigger features
+- **Expeditions**: pay for a mystery trip, beat its mini game to unlock a rare knife or gear; fail and pay again to retry.
 - **Iron Chef face-off:** two-player shucking mode.
 - More skill-tree perks, especially Speed (TBD), and possibly more trees.
 - More radio stations.

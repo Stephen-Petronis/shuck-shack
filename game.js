@@ -115,13 +115,15 @@
     return { cash: C.startCash || 0, owned, venue: C.venues[0].id, unlocked: [C.venues[0].id],
              shifts: 0, oysters: 0, bestShift: 0, cuts: 0, rep: {},
              xp: { acc: 0, spd: 0, bld: 0 }, perks: { acc: 0, spd: 0, bld: 0 }, xpTotal: 0, radio: 0,
-             knives: ['rusty'], knife: 'rusty', supplier: {}, barnOysters: 0 };
+             knives: ['rusty'], knife: 'rusty', supplier: {}, barnOysters: 0,
+             lemons: 0, stock: { small: 0, big: 0 } };
   }
   function loadSave() {
     try {
       const s = JSON.parse(localStorage.getItem(SAVE_KEY));
       if (s && s.owned) { const f = freshSave(); return Object.assign(f, s, { owned: Object.assign(f.owned, s.owned), rep: Object.assign({}, s.rep),
         xp: Object.assign(f.xp, s.xp), perks: Object.assign(f.perks, s.perks), supplier: Object.assign({}, s.supplier),
+        stock: Object.assign({ small: 0, big: 0 }, s.stock),
         knives: s.knives || ['rusty', 'steel', 'boston', 'golden'].slice(0, (s.owned && s.owned.knife || 0) + 1),
         knife: s.knife || ['rusty', 'steel', 'boston', 'golden'][Math.min(3, (s.owned && s.owned.knife) || 0)] }); }
     } catch (e) { /* no save yet or storage blocked */ }
@@ -153,6 +155,9 @@
   const knifeTierOpen = (k) => { const t = C.knifeTiers[k.tier]; return !t.needs || SAVE.unlocked.includes(t.needs); };
   const supplierLv = (vid = venue().id) => (SAVE.supplier && SAVE.supplier[vid]) || 0;
   const supplierOf = (vid) => C.suppliers[supplierLv(vid)] || C.suppliers[0];
+  const oysterPrice = (v) => Math.max(1, Math.round(v.pay * (C.oysterCost ?? 0.4) * (1 + 0.25 * supplierLv(v.id))));
+  const stockCount = () => (SAVE.stock.small || 0) + (SAVE.stock.big || 0);
+  const diveOpen = () => { const i = C.venues.findIndex((v) => v.id === (C.diveFrom || 'boardwalk')); return C.venues.indexOf(venue()) >= i; };
   const SK = C.skills;
   const perk = (tree, n) => (SAVE.perks[tree] || 0) >= n;
   const cutMult = () => knifeStats().cut * (tier('glove').cut ?? 1) * (perk('bld', 2) ? 0.6 : 1);
@@ -294,7 +299,8 @@
     const need = pickOrderSize(v);
     G = { venue: v, need, done: 0, clockMax: shiftClock(need, v), clock: 0, par: v.secsPerOyster * C.parFactor * (perk('spd', 4) ? 1.3 : 1), xp: { acc: 0, spd: 0, bld: 0 },
           pay: 0, tips: 0, accSum: 0, cuts: 0, served: 0, bandages: [], fast: 0,
-          wounds: 0, tapsDone: 0, stun: 0, lastSlip: -9, dripT: 0, drips: [], splats: [], bloody: 0, bloodLoss: 0 };
+          wounds: 0, tapsDone: 0, stun: 0, lastSlip: -9, dripT: 0, drips: [], splats: [], bloody: 0, bloodLoss: 0,
+          bill: 0, fromSupplier: 0, own: 0, ownBig: 0, lemonTips: 0, lemoned: 0, noLemon: 0, flyLemons: [], lemonCd: 0, lemonsCut: 0 };
     G.clock = G.clockMax;
     fx.lid = null; fx.stamp = null; fx.popups = []; fx.drops = []; fx.splash = []; hurt = null; cur = null;
     state = 'play'; phase = 'ready'; readyT = T; paused = false;
@@ -316,6 +322,10 @@
     cur.rot = (Math.random() * 2 - 1) * spinDeg * Math.PI / 180;
     cur.spin = 0;             // shown angle while it slides in
     cur.pts = screenPath(cur);
+    // where did this oyster come from? your own catch first (free), then the supplier (costs money)
+    if (SAVE.stock.big > 0) { SAVE.stock.big--; cur.src = 'big'; G.own++; G.ownBig++; fx.popups.push({ text: 'Your big catch!', sub: '', x: L.cx, y: L.cy - L.D * 0.55, t: 0.3, small: true, money: true }); }
+    else if (SAVE.stock.small > 0) { SAVE.stock.small--; cur.src = 'small'; G.own++; fx.popups.push({ text: 'Your catch', sub: '', x: L.cx, y: L.cy - L.D * 0.55, t: 0.3, small: true }); }
+    else { cur.src = 'supplier'; G.fromSupplier++; G.bill += oysterPrice(G.venue); }
     cur.barn = makeBarnacles(cur);
     if (cur.barn.length && !SAVE.barnTut) {
       SAVE.barnTut = true; writeSave();
@@ -329,7 +339,8 @@
   // with a fast swipe before tracing; dragging the knife slowly over one cuts you.
   function makeBarnacles(o) {
     const B = G.venue.barnacles; if (!B) return [];
-    let n = B[0] + Math.floor(Math.random() * (B[1] - B[0] + 1)) + (supplierOf(G.venue.id).barnacles || 0);
+    const srcAdj = o.src === 'small' ? 1 : o.src === 'big' ? -1 : (supplierOf(G.venue.id).barnacles || 0);   // tiny wild ones are crusty, big ones are clean
+    let n = B[0] + Math.floor(Math.random() * (B[1] - B[0] + 1)) + srcAdj;
     n = Math.min(n, 1 + Math.floor((SAVE.barnOysters || 0) / (C.barnacleRampEvery ?? 6)));   // start with one, add more as you learn
     if (n <= 0) return [];
     SAVE.barnOysters = (SAVE.barnOysters || 0) + 1;
@@ -438,8 +449,8 @@
   function sample(x, y) {
     const o = cur, tol = tolNow(), tol2 = tol * tol;
     const d = distToPath(o.pts, x, y);
-    o.errSum += Math.min(d, tol * 4); o.n++;
-    if (d > tol * 2) o.off++;
+    if (d < tol * 1.2) o.engaged = true;
+    if (o.engaged) { o.errSum += Math.min(d, tol * 4); o.n++; if (d > tol * 2) o.off++; }
     for (let i = 0; i < o.pts.length; i++) {
       if (o.covered[i]) continue;
       const p = o.pts[i], ex = p.x - x, ey = p.y - y;
@@ -481,6 +492,12 @@
     G.xp.spd += secs <= G.par ? SK.xp.spdFast : secs <= G.par * 1.5 ? SK.xp.spdOk : SK.xp.spdSlow;
     let loss = 0;
     if (bloody) { pay = 0; tip = 0; loss = Math.max(1, Math.round(G.venue.pay * C.bloodPenalty)); G.bloody++; G.bloodLoss += loss; G.xp.bld += SK.xp.bldPerBloody; }
+    if (!bloody && o.src === 'big') pay = Math.round(pay * (C.bigOysterPay ?? 1.5));
+    let lemonTip = 0, lemonNote = '';
+    if (!bloody) {
+      if (SAVE.lemons > 0) { SAVE.lemons--; lemonTip = Math.max(1, Math.round(G.venue.pay * (C.lemonTip ?? 0.5))); G.lemonTips += lemonTip; G.lemoned++; lemonNote = 'lemon tip!'; }
+      else if (G.venue.lemonRequired) { pay = Math.max(1, Math.round(pay * 0.5)); G.noLemon++; lemonNote = 'no lemon? half pay'; }
+    }
     G.pay += pay; G.tips += tip; if (tip) G.fast++;
     G.done += 1; G.accSum += acc;
 
@@ -489,7 +506,7 @@
     fx.stamp = bloody ? { text: 'YUCK! BLOODY!', color: '#ff6b5b', t: 0, rank: 5 } : { text: grade.name, color: grade.color, t: 0, rank };
     fx.popups.push(bloody
       ? { text: `-${money(loss)}`, sub: 'blood in the oyster!', x: L.cx, y: L.cy + L.D * 0.42, t: 0, bad: true }
-      : { text: `+${money(pay + tip)}`, sub: tip ? 'speedy tip!' : '', x: L.cx, y: L.cy + L.D * 0.42, t: 0, money: true });
+      : { text: `+${money(pay + tip + lemonTip)}`, sub: [tip ? 'speedy tip!' : '', lemonNote].filter(Boolean).join(' + '), x: L.cx, y: L.cy + L.D * 0.42, t: 0, money: true });
     for (let i = 0; i < 14; i++) {
       const a = Math.random() * Math.PI * 2, v = L.D * (0.8 + Math.random() * 1.6);
       fx.splash.push({ x: L.cx, y: L.cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v - L.D, r: 2 + Math.random() * 5, t: 0 });
@@ -503,9 +520,9 @@
   function endShift(finished) {
     const v = G.venue;
     const bonus = finished ? Math.round(Math.max(0, G.clock) * v.pay * C.timeBonusRate) : 0;
-    const sub = G.pay + G.tips + bonus;
+    const sub = G.pay + G.tips + G.lemonTips + bonus;
     const jar = Math.round(sub * (cashMult() - 1));
-    const total = Math.max(0, sub + jar - G.bloodLoss);
+    const total = Math.max(0, sub + jar - G.bloodLoss - G.bill);
     const stars = shiftStars(finished);
     const repBefore = repOf(v.id);
     let repAfter = repBefore;
@@ -539,9 +556,12 @@
       <div class="receipt">
         ${row(`Oysters (${G.done})`, money(G.pay))}
         ${row(`Speedy tips (${G.fast})`, money(G.tips))}
+        ${G.lemoned ? row(`Lemon tips (${G.lemoned})`, money(G.lemonTips)) : ''}
         ${row(finished ? 'Time left bonus' : 'Time left bonus (late)', money(bonus))}
         ${jar ? row(`${tier('jar').name}`, money(jar)) : ''}
         ${G.bloodLoss ? row(`Bloody oysters (${G.bloody})`, '-' + money(G.bloodLoss), 'neg') : ''}
+        ${G.fromSupplier ? row(`Supplier oysters (${G.fromSupplier})`, '-' + money(G.bill), 'neg') : ''}
+        ${G.own ? row(`Your own catch (${G.own}${G.ownBig ? `, ${G.ownBig} big` : ''})`, 'free!') : ''}
         ${row('Total', money(total), 'total')}
       </div>
       <div class="repline"><span>${v.name}</span><b>${starsText(repAfter)}</b>
@@ -549,6 +569,7 @@
       ${justEarned ? `<p class="nudge">5 stars! ${nextV.name} is ready to open for ${money(nextV.cost)}.</p>` : ''}
       <p class="fine">${G.cuts ? `Cut yourself ${G.cuts === 1 ? 'once' : G.cuts + ' times'}.` : 'No cuts!'}${best ? ' New best shift!' : ''}</p>
       ${xpBlock(G.xp, lvAfter > lvBefore ? lvAfter : 0, readyNow.length > readyBefore ? readyNow : [])}
+      <p class="fine">Lemons left: ${SAVE.lemons} · Oysters in the cooler: ${stockCount()}${SAVE.stock.big ? ` (${SAVE.stock.big} big)` : ''}${G.noLemon ? ` · ${G.noLemon} served without lemon` : ''}</p>
       <div class="cashline"><span>Cash</span><strong>${money(SAVE.cash)}</strong></div>
       ${next && SAVE.cash >= next.cost ? `<p class="nudge">You can afford the ${next.name} now.</p>` : ''}`;
     setResultButtons((C.miniGames ?? true) ? 'mini' : 'hub');
@@ -586,15 +607,122 @@
     return x >= n.x - pad && x <= n.x + n.w + pad && y >= n.y - pad && y <= n.y + n.h + pad;
   }
 
+  // =====================================================================
+  //  OCTOPUS LEMON BUTTON (in-shift at fancier restaurants)
+  //  Tap the octopus: a lemon flies up. Swipe it fast to halve it, swipe the
+  //  halves to quarter them. Every quarter = 1 wedge for lemon tips.
+  // =====================================================================
+  const octoBtn = () => { const r = Math.max(26, Math.min(36, Math.min(W, H) * 0.06)); return { x: r + 12, y: L.top + r + 14, r }; };
+  const lemonBtnOn = () => state === 'play' && G && venue().lemonButton;
+  const inOcto = (x, y) => { const b = octoBtn(); return Math.hypot(x - b.x, y - b.y) <= b.r + 10; };
+  function octoThrow() {
+    if (!G || paused || G.lemonCd > 0) return;
+    G.lemonCd = C.lemonButtonCooldown ?? 1.5;
+    const m = Math.min(W, H), g = H * 1.1, x = W * (0.2 + Math.random() * 0.6), peak = H * (0.25 + Math.random() * 0.15);
+    const vy = -Math.sqrt(2 * g * (H + 40 - peak));
+    G.flyLemons.push({ kind: 'whole', x, y: H + 40, vx: (W / 2 - x) * 0.25 + (Math.random() - 0.5) * m * 0.2, vy, g, r: m * 0.06, rot: 0, vr: (Math.random() - 0.5) * 5 });
+    noise(0.15, 0.08, 1400); tone(420, 0.1, 'triangle', 0.05, 640);
+  }
+  function sliceAt(x1, y1, x2, y2) {
+    if (!G || !G.flyLemons.length) return;
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    if (len < Math.min(W, H) * 0.03) return;   // has to be a quick swipe
+    const out = [];
+    G.flyLemons.forEach((p) => {
+      if (p.kind === 'quarter' || p.cutT > T - 0.15) { out.push(p); return; }
+      const t = Math.max(0, Math.min(1, ((p.x - x1) * (x2 - x1) + (p.y - y1) * (y2 - y1)) / (len * len)));
+      const d = Math.hypot(x1 + (x2 - x1) * t - p.x, y1 + (y2 - y1) * t - p.y);
+      if (d > p.r * 1.1) { out.push(p); return; }
+      const nx = -(y2 - y1) / len, ny = (x2 - x1) / len, kick = Math.min(W, H) * 0.35;
+      const kind = p.kind === 'whole' ? 'half' : 'quarter';
+      for (const s of [-1, 1]) out.push({ ...p, kind, art: s, vx: p.vx + nx * kick * s, vy: Math.min(p.vy, 0) - kick * 0.4 + ny * kick * s * 0.3, r: p.r * 0.8, vr: s * 6, cutT: T });
+      for (let k = 0; k < 6; k++) fx.splash.push({ x: p.x, y: p.y, r: 2 + Math.random() * 3, t: 0, vx: (Math.random() - 0.5) * 300, vy: (Math.random() - 0.8) * 300 });
+      noise(0.08, 0.12, 2400); tone(900, 0.05, 'square', 0.04, 500);
+      if (kind === 'quarter') {
+        const cap = C.lemonCap ?? 60, add = Math.max(0, Math.min(2, cap - (SAVE.lemons || 0)));
+        SAVE.lemons = (SAVE.lemons || 0) + add; G.lemonsCut += add;
+        fx.popups.push({ text: add ? `+${add} wedges` : 'Wedge bin full', sub: '', x: p.x, y: p.y - 30, t: 0, small: true, money: !!add, bad: !add });
+      }
+    });
+    G.flyLemons = out;
+  }
+  function updateFly(dt) {
+    if (!G) return;
+    G.lemonCd = Math.max(0, (G.lemonCd || 0) - dt);
+    const b = octoBtn();
+    G.flyLemons.forEach((p) => {
+      if (p.kind === 'quarter') {   // quarters zip into the octopus bucket
+        p.home = (p.home || 0) + dt * 1.8; const k = Math.min(1, p.home);
+        p.x += (b.x - p.x) * k * 0.25; p.y += (b.y - p.y) * k * 0.25; p.r *= 0.985; p.rot += p.vr * dt;
+        if (Math.hypot(p.x - b.x, p.y - b.y) < b.r * 0.6) p.gone = true;
+        return;
+      }
+      p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+      if (p.y > H + 80 && p.vy > 0) { p.gone = true; fx.popups.push({ text: 'Missed the lemon!', sub: '', x: Math.max(80, Math.min(W - 80, p.x)), y: H - 70, t: 0, small: true, bad: true }); }
+    });
+    G.flyLemons = G.flyLemons.filter((p) => !p.gone);
+  }
+  function drawOcto() {
+    if (!G) return;
+    const b = octoBtn(), on = venue().lemonButton, n = SAVE.lemons || 0;
+    ctx.save(); ctx.translate(b.x, b.y);
+    // tentacles
+    ctx.strokeStyle = '#2a1408'; ctx.lineCap = 'round';
+    for (let k = 0; k < 5; k++) {
+      const a = Math.PI * (0.15 + k * 0.175), w = Math.sin(T * 3 + k) * 0.25;
+      ctx.lineWidth = 7; ctx.strokeStyle = '#2a1408';
+      ctx.beginPath(); ctx.moveTo(Math.cos(a) * b.r * 0.6, Math.sin(a) * b.r * 0.6);
+      ctx.quadraticCurveTo(Math.cos(a + w) * b.r * 1.2, Math.sin(a + w) * b.r * 1.2, Math.cos(a - w) * b.r * 1.45, Math.sin(a - w) * b.r * 1.35); ctx.stroke();
+      ctx.lineWidth = 4.5; ctx.strokeStyle = on ? '#d9628e' : '#a99';
+      ctx.stroke();
+    }
+    const ready = on && G.lemonCd <= 0 && !G.flyLemons.length;
+    const s = ready ? 1 + Math.sin(T * 6) * 0.05 : 1; ctx.scale(s, s);
+    ctx.fillStyle = on ? '#ffe066' : '#e8dcb0'; ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    const im = IMG.lemon_whole;
+    if (im) { const w = b.r * 1.3, h = w * im.height / im.width; ctx.globalAlpha = on && G.lemonCd > 0 ? 0.45 : 1; ctx.drawImage(im, -w / 2, -h / 2 - 3, w, h); ctx.globalAlpha = 1; }
+    if (on && G.lemonCd > 0) { ctx.fillStyle = 'rgba(42,20,8,0.35)'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, b.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (G.lemonCd / (C.lemonButtonCooldown ?? 1.5))); ctx.fill(); }
+    ctx.restore();
+    // wedge count badge
+    const low = n === 0;
+    ctx.save(); ctx.translate(b.x + b.r * 0.75, b.y + b.r * 0.7);
+    ctx.fillStyle = low ? '#ff6b5b' : '#2a1408'; ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    label(String(n), b.x + b.r * 0.75, b.y + b.r * 0.7, 14, '#fff3d6');
+    if (low && venue().lemonRequired && Math.floor(T * 2) % 2) label(on ? 'Tap for lemons!' : 'No lemons!', b.x + b.r + 58, b.y, 14, '#ff6b5b');
+  }
+  function drawFly() {
+    if (!G) return;
+    G.flyLemons.forEach((p) => {
+      const art = LEMON_ART[p.kind === 'whole' ? 'whole' : p.kind === 'half' ? 'half' : (p.art > 0 ? 'quarterA' : 'quarterB')], im = IMG[art.key];
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      if (p.kind === 'half' && p.art < 0) ctx.scale(-1, 1);
+      if (im) { const w = p.r * art.w, h = w * im.height / im.width; ctx.drawImage(im, -w / 2, -h / 2, w, h); }
+      else { ctx.fillStyle = '#ffe066'; ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+    });
+  }
+  const swipes = new Map();
+
   // ---------- Input ----------
   function localPos(e) { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
   canvas.addEventListener('pointerdown', (e) => {
+    if (state === 'dive') {   // DIVE button works as a second finger while you swim
+      const q = localPos(e);
+      if (inDiveBtn(q.x, q.y)) { audio(); diveTap(); e.preventDefault(); return; }
+    }
+    if (state === 'play' && G && !paused) {   // octopus button and lemon slicing work with any finger
+      const q = localPos(e);
+      swipes.set(e.pointerId, q);
+      if (lemonBtnOn() && inOcto(q.x, q.y)) { audio(); octoThrow(); e.preventDefault(); return; }
+    }
     if (pointer.id !== null && pointer.id !== e.pointerId) return;
     audio();
     const p = localPos(e);
     pointer.id = e.pointerId; pointer.down = true; pointer.type = e.pointerType; pointer.x = p.x; pointer.y = p.y;
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-    if (state === 'lemon') { e.preventDefault(); return; }
+    if (state === 'lemon' || state === 'dive') { e.preventDefault(); return; }
     if (state === 'timelapse') { lapse = null; openHub('work'); return; }
     if (state !== 'play' || paused) return;
     if (G.wounds && inNapkin(p.x, p.y, 44)) { tapNapkin(); e.preventDefault(); return; }
@@ -612,11 +740,16 @@
   });
   canvas.addEventListener('pointermove', (e) => {
     const p = localPos(e);
+    if (state === 'play' && G && G.flyLemons.length && !paused) {
+      const q = swipes.get(e.pointerId);
+      if (q) sliceAt(q.x, q.y, p.x, p.y);
+      swipes.set(e.pointerId, p);
+    } else swipes.set(e.pointerId, p);
     if (e.pointerType === 'mouse') pointer.hover = true;
     if (pointer.id !== null && pointer.id !== e.pointerId) return;
     pointer.x = p.x; pointer.y = p.y; pointer.type = e.pointerType;
   });
-  function endPointer(e) { if (pointer.id !== e.pointerId) return; pointer.id = null; pointer.down = false; pointer.tracing = false; }
+  function endPointer(e) { swipes.delete(e.pointerId); if (pointer.id !== e.pointerId) return; pointer.id = null; pointer.down = false; pointer.tracing = false; }
   canvas.addEventListener('pointerup', endPointer);
   canvas.addEventListener('pointercancel', endPointer);
   canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') pointer.hover = false; });
@@ -632,9 +765,9 @@
     document.body.classList.toggle('in-hub', which === 'hub');
     const dockBtn = document.querySelector('#hubDock .btn');
     if (dockBtn) dockBtn.textContent = SAVE.shifts ? 'Back to work!' : 'Start your first shift!';
-    els.btnPause.hidden = !(state === 'play' || state === 'lemon');
-    document.body.classList.toggle('on-shift', state === 'play' || state === 'lemon');
-    const focusBtn = { title: 'btnStart', result: 'btnBackToShack', pause: 'btnResume' }[which];
+    els.btnPause.hidden = !(state === 'play' || state === 'lemon' || state === 'dive');
+    document.body.classList.toggle('on-shift', state === 'play' || state === 'lemon' || state === 'dive');
+    const focusBtn = { title: 'btnStart', result: $('btnBackToShack').hidden ? 'btnSkipMini' : 'btnBackToShack', pause: 'btnResume' }[which];
     if (focusBtn) setTimeout(() => { const b = $(focusBtn); if (b) b.focus({ preventScroll: true }); }, 30);
   }
 
@@ -716,6 +849,9 @@
           <div><span>Pay</span><b>${money(v.pay)} each</b></div>
           <div><span>Cut risk</span><b class="risk ${rc}">${risk}</b></div>
           <div class="wide"><span>Your knife</span><b>${knifeDef().name} · ${knifeFeel()}</b></div>
+          <div><span>Lemon wedges</span><b>${SAVE.lemons || 0}${v.lemonRequired && !SAVE.lemons ? ' (need some!)' : ''}</b></div>
+          <div><span>Cooler</span><b>${stockCount()} oyster${stockCount() === 1 ? '' : 's'}</b></div>
+          <div class="wide"><span>Supplier price</span><b>${money(oysterPrice(v))} per oyster · your own catch is free</b></div>
         </div>
         <p class="fine stats">${SAVE.oysters.toLocaleString()} oyster${SAVE.oysters === 1 ? '' : 's'} shucked · best shift ${money(SAVE.bestShift)}</p>
         <button class="linkbtn" type="button" data-act="reset">${resetArmed ? 'Tap again to wipe your save' : 'Start over'}</button>`;
@@ -931,7 +1067,7 @@
   $('btnTipOk').addEventListener('click', () => { paused = tipWasPaused; showScreen(paused ? 'pause' : null); });
 
   function setPaused(p) {
-    if (state !== 'play' && state !== 'lemon') return;
+    if (state !== 'play' && state !== 'lemon' && state !== 'dive') return;
     paused = p; pointer.tracing = false;
     showScreen(p ? 'pause' : null);
   }
@@ -967,15 +1103,21 @@
     else goToShack();
   });
   $('btnSkipMini').addEventListener('click', () => { audio(); goToShack(); });
+  $('btnDive').addEventListener('click', () => { audio(); startDive(); });
+  $('prepPick').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-prep]'); if (!b || b.disabled) return;
+    const p = PREP.find((x) => x.id === b.dataset.prep); if (p && p.go) { audio(); $('prepPick').hidden = true; p.go(); }
+  });
   $('btnResume').addEventListener('click', () => setPaused(false));
   $('btnWalkOut').addEventListener('click', () => {
     paused = false;
     if (state === 'lemon') { M.pieces = []; M.arms.forEach((a) => { a.hold = null; }); endLemons(); }
+    else if (state === 'dive') endDive();
     else endShift(false);
   });
   els.btnPause.addEventListener('click', () => setPaused(!paused));
   els.btnMute.addEventListener('click', () => setMuted(!muted));
-  document.addEventListener('visibilitychange', () => { if (document.hidden && (state === 'play' || state === 'lemon') && !paused) setPaused(true); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && (state === 'play' || state === 'lemon' || state === 'dive') && !paused) setPaused(true); });
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' || e.key === 'p') setPaused(!paused);
     if (e.key === 'm') setMuted(!muted);
@@ -1002,6 +1144,7 @@
   function update(dt) {
     T += dt;
     if (state === 'play' && !paused) {
+      updateFly(dt);
       if (phase === 'ready') {
         if (T - readyT >= C.orderUpTime) nextOyster();
       } else {
@@ -1415,6 +1558,7 @@
       drawOysterImg(fx.lid.shape + '_top', fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5);
       drawEyes(fx.lid.shape, fx.lid.x, fx.lid.y, fx.lid.flip, fx.lid.rot, 1 + fx.lid.t * 0.5, 9);
     }
+    if (state === 'play') { drawFly(); drawOcto(); }
     drawArm();
     if (state === 'play' && phase === 'ready' && !paused) drawOrderUp();
     drawStamp();
@@ -1694,6 +1838,8 @@
     hudLabels(['Working at', 'Shucked', 'Earned']);
     const best = M.score > (SAVE.lemonBest || 0);
     if (best) SAVE.lemonBest = M.score;
+    const wedges = Math.min(C.lemonCap ?? 60, SAVE.lemons + M.quarters) - SAVE.lemons;
+    SAVE.lemons += wedges;
     const lvB = playerLevel().lv, rdB = SK.trees.filter((t) => perkReady(t.id)).length;
     const lemonXp = { acc: 0, spd: M.xpSpd || 0, bld: 0 };
     SAVE.xp.spd += lemonXp.spd; SAVE.xpTotal = (SAVE.xpTotal || 0) + lemonXp.spd;
@@ -1711,6 +1857,7 @@
         ${row('Quarter pieces', M.quarters)}
         ${row('Best combo', M.bestCombo ? `${M.bestCombo} cuts` : '—')}
         ${row('Dropped whole', M.dropped)}
+        ${row('Lemon wedges stocked', `+${wedges} (now ${SAVE.lemons})`)}
         ${row('Score', M.score.toLocaleString(), 'total')}
       </div>
       <p class="fine">${pct >= 90 ? 'Lemon master! The octopus is impressed.' : pct >= 60 ? 'Nice knife work. Enough lemons for a busy night.' : pct >= 30 ? 'Some lemons got away. The seagulls say thanks.' : 'The octopus is going to need more lemons.'}${best ? ' New best!' : ''}</p>
@@ -1720,11 +1867,26 @@
     showScreen('result');
   }
 
+  // Between shifts you pick ONE prep game. Each one stocks a different supply.
+  const PREP = [
+    { id: 'lemons', name: 'Lemon Toss', c: '#ffe066', why: 'Cut lemons with the octopus. More wedges = bigger tips.',
+      stat: () => `Wedges: ${SAVE.lemons || 0} / ${C.lemonCap ?? 60}`, open: () => true, go: () => startLemons() },
+    { id: 'dive', name: "Barry's Dive", c: '#7be0ff', why: 'Catch your own oysters. Skip the supplier bill = more profit.',
+      stat: () => `Cooler: ${stockCount()} / ${C.stockCap ?? 40}`, open: () => diveOpen(), go: () => startDive() },
+    { id: 'sauce', name: 'Cocktail Sauce', c: '#ff8a7a', why: 'Coming soon: mix sauce for shrimp cocktail orders.', soon: true },
+    { id: 'sharpen', name: 'Knife Sharpening', c: '#cfd8dc', why: 'Coming soon: a sharp knife flicks barnacles easier.', soon: true },
+  ];
   function setResultButtons(next) {
-    const btn = $('btnBackToShack'), skip = $('btnSkipMini');
+    const btn = $('btnBackToShack'), skip = $('btnSkipMini'), dive = $('btnDive'), pick = $('prepPick');
     btn.dataset.next = next;
-    btn.textContent = next === 'mini' ? 'Lemon break!' : 'Back to the shack';
-    skip.hidden = next !== 'mini';
+    btn.textContent = 'Back to the shack';
+    const mini = next === 'mini';
+    btn.hidden = mini; dive.hidden = true; skip.hidden = !mini; pick.hidden = !mini;
+    if (mini) {
+      pick.innerHTML = `<h3>Prep time! Pick one</h3><p class="why">You only get one between shifts. Choose wisely.</p><div class="cards">${
+        PREP.filter((p) => p.soon || p.open()).map((p) => `<button class="pcard${p.soon ? ' soon' : ''}" type="button" data-prep="${p.id}" style="--c:${p.c}"${p.soon ? ' disabled' : ''}>
+          <b>${p.name}</b><span>${p.why}</span>${p.stat ? `<em>${p.stat()}</em>` : ''}</button>`).join('')}</div>`;
+    }
   }
 
   // =====================================================================
@@ -1800,7 +1962,7 @@
     }
   }
   function goToShack() {
-    M = null;
+    M = null; V = null;
     if (pendingLapse && venueHasScene()) {
       lapse = { t: 0, venueId: venue().id };
       pendingLapse = null;
@@ -1998,11 +2160,332 @@
     if (next >= 0) flash(`Now playing: ${STATIONS[next].name}`);
   });
 
+  // =====================================================================
+  //  MINI GAME: BARRY'S DIVE (top-down, placeholder art drawn in code)
+  //  Barry the walrus paddles around, dives on shadows, and brings oysters
+  //  back to the dock. Caught oysters go in the cooler and cost nothing.
+  // =====================================================================
+  const DV = C.dive || {};
+  let V = null;
+  const DIVE_ITEMS = {   // weight, shadow size (x min side), chance of bubbles, label
+    small:    { w: 40, r: 0.045, bub: 0.6,  name: 'Oyster' },
+    big:      { w: 14, r: 0.072, bub: 0.85, name: 'Big oyster' },
+    boot:     { w: 10, r: 0.055, bub: 0.12, name: 'Old boot!' },
+    glove:    { w: 9,  r: 0.05,  bub: 0.12, name: 'Rubber glove!' },
+    starfish: { w: 9,  r: 0.048, bub: 0.1,  name: 'Starfish!' },
+    bottle:   { w: 7,  r: 0.045, bub: 0.15, name: 'Old bottle!' },
+    crab:     { w: 6,  r: 0.05,  bub: 0.35, name: 'Crab! Pinch!' },
+  };
+  function diveGear() {
+    return { swim: tier('fins').swim ?? 1, breath: tier('lungs').breath ?? 1, bag: tier('bag').bag ?? 3, mash: tier('dgrip').mash ?? 1 };
+  }
+  function diveArea() {
+    const beach = Math.max(70, Math.min(120, H * 0.13));
+    return { x0: 10, x1: W - 10, y0: L.top + 64, y1: H - beach, beach,
+             dock: { x0: W / 2 - 60, x1: W / 2 + 60, y0: H - beach - 34, y1: H - beach + 10 },
+             btn: (() => { const r = Math.min(50, Math.max(40, W * 0.11)); return { x: W - r - 16, y: H - 66 - r, r }; })() };
+  }
+  function pickItemType() {
+    const tot = Object.values(DIVE_ITEMS).reduce((s, d) => s + d.w, 0);
+    let x = Math.random() * tot;
+    for (const [k, d] of Object.entries(DIVE_ITEMS)) { x -= d.w; if (x <= 0) return k; }
+    return 'small';
+  }
+  function makeItem() {
+    const A = diveArea(), type = pickItemType(), d = DIVE_ITEMS[type], m = Math.min(W, H);
+    let x, y, tries = 0;
+    do { x = A.x0 + 30 + Math.random() * (A.x1 - A.x0 - 60); y = A.y0 + 30 + Math.random() * (A.y1 - A.y0 - 90); tries++; }
+    while (V && V.items.some((it) => Math.hypot(it.x - x, it.y - y) < m * 0.16) && tries < 20);
+    return { type, x, y, r: d.r * m, rot: Math.random() * 6.28, bub: Math.random() < d.bub, seed: Math.random() * 9, vx: 0, vy: 0 };
+  }
+  function startDive() {
+    state = 'dive'; phase = 'idle'; paused = false; cur = null; hurt = null; M = null;
+    const g = diveGear(), A = diveArea();
+    V = { t: 0, intro: 1.6, time: DV.duration ?? 45, left: DV.duration ?? 45, breathMax: 100 * g.breath, breath: 100 * g.breath,
+          bag: [], bagCap: g.bag, caught: { small: 0, big: 0 }, junk: 0, lost: 0, g,
+          x: W / 2, y: A.y1 - 60, vx: 0, vy: 0, ang: -Math.PI / 2, dive: null, mash: null, gasp: 0, sting: 0, wear: null,
+          items: [], jelly: [], rings: [], respawn: [], over: false };
+    const n = DV.items ?? 12;
+    for (let i = 0; i < n; i++) V.items.push(makeItem());
+    for (let i = 0; i < (DV.jellyfish ?? 2); i++) V.jelly.push({ x: A.x0 + Math.random() * (A.x1 - A.x0), y: A.y0 + 40 + Math.random() * (A.y1 - A.y0 - 160), ph: Math.random() * 6, sp: 0.3 + Math.random() * 0.4 });
+    showScreen(null);
+    hudLabels(['Mini game', 'Flipper bag', 'Caught']);
+    els.venue.textContent = "Barry's Dive";
+    diveHud();
+    tone(330, 0.3, 'triangle', 0.06, 660); noise(0.4, 0.1, 600, 0.1);
+  }
+  function diveHud() {
+    els.count.textContent = `${V.bag.length} / ${V.bagCap}`;
+    els.earned.textContent = String(V.caught.small + V.caught.big);
+    const f = Math.max(0, V.left / V.time);
+    els.clockFill.style.transform = `scaleX(${f})`;
+    els.clockFill.dataset.low = f < 0.22 ? '1' : '0';
+    els.clockText.textContent = Math.ceil(Math.max(0, V.left)) + 's';
+  }
+  const inDiveBtn = (x, y) => { const b = diveArea().btn; return Math.hypot(x - b.x, y - b.y) <= b.r + 12; };
+  function diveTap() {
+    if (!V || V.over || paused || V.t < V.intro) return;
+    if (V.mash) { V.mash.prog += (DV.mashPer ?? 0.085) * V.g.mash; V.rings.push({ x: V.x, y: V.y, t: 0, small: true }); tone(500 + V.mash.prog * 500, 0.04, 'square', 0.04); return; }
+    if (V.dive || V.gasp > 0) return;
+    const it = V.items.find((i) => Math.hypot(i.x - V.x, i.y - V.y) < i.r + Math.min(W, H) * 0.05);
+    V.breath -= DV.diveCost ?? 16;
+    V.dive = { t: 0, item: it || null };
+    V.rings.push({ x: V.x, y: V.y, t: 0 });
+    noise(0.25, 0.18, 900); tone(220, 0.2, 'sine', 0.08, 110);
+  }
+  function popText(text, bad, x = V.x, y = V.y - 50) { fx.popups.push({ text, sub: '', x, y, t: 0.2, small: true, bad: !!bad, money: !bad }); }
+  function surfaceWith(it) {
+    if (!it) { popText('Nothing down there', true); return; }
+    if (it.type === 'small' || it.type === 'big') {
+      if (V.bag.length >= V.bagCap) { popText('Bag full! Swim to the dock', true); return; }
+      if (it.type === 'big') {   // big ones try to get away: smash DIVE
+        V.mash = { item: it, prog: 0.3 };
+        popText('Big one! Smash DIVE!', false); return;
+      }
+      V.bag.push('small'); takeItem(it); popText('+1 oyster'); SFX.cash(); return;
+    }
+    if (it.type === 'crab') {
+      V.breath -= 12; if (V.bag.length) { V.bag.pop(); V.lost++; popText('Pinch! Dropped one', true); } else popText('Pinch!', true);
+      SFX.ouch(); takeItem(it); return;
+    }
+    V.junk++; V.wear = { type: it.type, t: 2.2 }; popText(DIVE_ITEMS[it.type].name, true); tone(160, 0.25, 'sawtooth', 0.06, 90); takeItem(it);
+  }
+  function takeItem(it) { V.items = V.items.filter((x) => x !== it); V.respawn.push(1.2 + Math.random()); }
+  function gasp() {
+    V.gasp = DV.gaspTime ?? 1.4; V.breath = 0; V.dive = null;
+    if (V.mash) { popText('Out of breath! It got away', true); V.mash.item.x += (Math.random() - 0.5) * 120; V.mash = null; }
+    else popText('GASP!', true);
+    tone(600, 0.3, 'sawtooth', 0.06, 200);
+  }
+  function updateDive(dt) {
+    if (!V) return;
+    if (paused) return;
+    V.t += dt;
+    const A = diveArea(), m = Math.min(W, H);
+    const live = V.t > V.intro && !V.over;
+    if (live) { V.left -= dt; if (V.left <= 0) { endDive(); return; } }
+    // swimming
+    const under = V.dive || V.mash;
+    if (!under && V.gasp <= 0 && pointer.down && pointer.diving !== true) {
+      const dx = pointer.x - V.x, dy = pointer.y - V.y, dist = Math.hypot(dx, dy);
+      const sp = m * 0.42 * V.g.swim * Math.min(1, dist / 80);
+      const tvx = dist > 4 ? dx / dist * sp : 0, tvy = dist > 4 ? dy / dist * sp : 0;
+      V.vx += (tvx - V.vx) * Math.min(1, dt * 2.6); V.vy += (tvy - V.vy) * Math.min(1, dt * 2.6);
+    } else { V.vx *= Math.pow(0.25, dt); V.vy *= Math.pow(0.25, dt); }
+    // current: a gentle push to the right in the middle band
+    const midBand = Math.abs(V.y - (A.y0 + A.y1) / 2) < (A.y1 - A.y0) * 0.12;
+    if (midBand && !under) V.vx += m * 0.12 * dt;
+    V.x = Math.max(A.x0 + 20, Math.min(A.x1 - 20, V.x + V.vx * dt));
+    V.y = Math.max(A.y0 + 20, Math.min(A.dock.y1, V.y + V.vy * dt));
+    if (Math.hypot(V.vx, V.vy) > 8) { const ta = Math.atan2(V.vy, V.vx); let da = ta - V.ang; da = Math.atan2(Math.sin(da), Math.cos(da)); V.ang += da * Math.min(1, dt * 5); }
+    // breath
+    if (V.dive) {
+      V.dive.t += dt;
+      if (V.breath <= 0) gasp();
+      else if (V.dive.t >= (DV.diveTime ?? 0.7)) { const it = V.dive.item; V.dive = null; surfaceWith(it); }
+    } else if (V.mash) {
+      V.mash.prog -= (DV.mashDecay ?? 0.5) * dt; V.breath -= (DV.mashBreath ?? 18) * dt;
+      const it = V.mash.item;
+      if (V.breath <= 0) gasp();
+      else if (V.mash.prog >= 1) { V.mash = null; if (V.bag.length < V.bagCap) { V.bag.push('big'); takeItem(it); popText('Got the big one!'); SFX.orderUp(); } }
+      else if (V.mash.prog <= 0) { V.mash = null; popText('It got away!', true); it.x = Math.max(A.x0 + 40, Math.min(A.x1 - 40, it.x + (Math.random() - 0.5) * m * 0.5)); it.y = Math.max(A.y0 + 40, Math.min(A.y1 - 80, it.y + (Math.random() - 0.5) * m * 0.4)); }
+    } else if (V.gasp > 0) { V.gasp -= dt; V.breath = Math.min(V.breathMax, V.breath + (DV.refill ?? 14) * dt); }
+    else V.breath = Math.min(V.breathMax, V.breath + (DV.refill ?? 14) * dt);
+    if (V.breath < 0) V.breath = 0;
+    // big oysters scoot away when Barry gets close
+    V.items.forEach((it) => {
+      if (it.type !== 'big' || (V.mash && V.mash.item === it)) return;
+      const d = Math.hypot(it.x - V.x, it.y - V.y);
+      if (d < m * 0.18) { it.vx += (it.x - V.x) / d * m * 0.25 * dt; it.vy += (it.y - V.y) / d * m * 0.25 * dt; }
+      it.vx *= Math.pow(0.3, dt); it.vy *= Math.pow(0.3, dt);
+      it.x = Math.max(A.x0 + 30, Math.min(A.x1 - 30, it.x + it.vx * dt)); it.y = Math.max(A.y0 + 30, Math.min(A.y1 - 70, it.y + it.vy * dt));
+    });
+    // jellyfish
+    V.sting = Math.max(0, V.sting - dt);
+    V.jelly.forEach((j) => {
+      j.ph += dt * j.sp; j.x += Math.cos(j.ph) * m * 0.05 * dt; j.y += Math.sin(j.ph * 0.7) * m * 0.04 * dt;
+      if (!under && V.sting <= 0 && Math.hypot(j.x - V.x, j.y - V.y) < m * 0.075) {
+        V.sting = 1.2; V.breath -= 20; const d = Math.hypot(V.x - j.x, V.y - j.y) || 1;
+        V.vx = (V.x - j.x) / d * m * 0.6; V.vy = (V.y - j.y) / d * m * 0.6; popText('Sting!', true); SFX.ouch();
+      }
+    });
+    // dock
+    if (V.bag.length && V.x > A.dock.x0 && V.x < A.dock.x1 && V.y > A.dock.y0) {
+      const n = V.bag.length; V.bag.forEach((b) => { V.caught[b]++; }); V.bag = [];
+      popText(`+${n} to the cooler!`); SFX.orderUp();
+    }
+    V.respawn = V.respawn.map((t) => t - dt).filter((t) => { if (t <= 0) { V.items.push(makeItem()); return false; } return true; });
+    if (V.wear) { V.wear.t -= dt; if (V.wear.t <= 0) V.wear = null; }
+    V.rings.forEach((r) => { r.t += dt; }); V.rings = V.rings.filter((r) => r.t < 0.9);
+    fx.popups.forEach((p) => { p.t += dt; }); fx.popups = fx.popups.filter((p) => p.t < 1.4);
+    diveHud();
+  }
+  // ---- drawing (placeholder shapes) ----
+  function diveShape(c, type, r, seed) {
+    c.beginPath();
+    if (type === 'small' || type === 'big') {
+      for (let k = 0; k < 14; k++) { const a = k / 14 * Math.PI * 2, rr = r * (0.82 + 0.18 * Math.sin(seed + k * 2.1)); c.lineTo(Math.cos(a) * rr * 1.15, Math.sin(a) * rr * 0.85); }
+    } else if (type === 'boot') {
+      c.moveTo(-r * 0.4, -r); c.lineTo(r * 0.2, -r); c.lineTo(r * 0.2, r * 0.2); c.lineTo(r * 1.1, r * 0.35); c.lineTo(r * 1.1, r * 0.8); c.lineTo(-r * 0.4, r * 0.8);
+    } else if (type === 'glove') {
+      c.ellipse(0, r * 0.25, r * 0.6, r * 0.6, 0, 0, Math.PI * 2);
+      for (let k = 0; k < 4; k++) { c.moveTo(-r * 0.45 + k * r * 0.3, 0); c.rect(-r * 0.52 + k * r * 0.3, -r, r * 0.22, r * 0.9); }
+      c.moveTo(r * 0.5, r * 0.2); c.rect(r * 0.45, -r * 0.1, r * 0.5, r * 0.22);
+    } else if (type === 'starfish') {
+      for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2 - Math.PI / 2, rr = k % 2 ? r * 0.4 : r * 1.1; c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+    } else if (type === 'bottle') {
+      c.rect(-r * 1.0, -r * 0.35, r * 1.4, r * 0.7); c.rect(r * 0.4, -r * 0.16, r * 0.6, r * 0.32);
+    } else if (type === 'crab') {
+      c.ellipse(0, 0, r * 0.8, r * 0.55, 0, 0, Math.PI * 2);
+      c.moveTo(-r * 0.8, -r * 0.3); c.ellipse(-r * 1.0, -r * 0.6, r * 0.28, r * 0.2, 0, 0, Math.PI * 2);
+      c.moveTo(r * 0.8, -r * 0.3); c.ellipse(r * 1.0, -r * 0.6, r * 0.28, r * 0.2, 0, 0, Math.PI * 2);
+    }
+    c.closePath();
+  }
+  function drawItemShadow(it) {
+    ctx.save(); ctx.translate(it.x, it.y + Math.sin(T * 1.3 + it.seed) * 2); ctx.rotate(it.rot);
+    ctx.globalAlpha = 0.55; ctx.fillStyle = '#0d2b45';
+    diveShape(ctx, it.type, it.r, it.seed); ctx.fill();
+    ctx.restore();
+    if (it.bub) {
+      ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1.5;
+      for (let k = 0; k < 3; k++) { const ph = (T * 0.8 + k / 3 + it.seed) % 1, bx = it.x + Math.sin(ph * 6 + k) * 5, by = it.y - it.r * 0.6 - ph * 28; ctx.globalAlpha = 1 - ph; ctx.beginPath(); ctx.arc(bx, by, 2 + k, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.restore();
+    }
+  }
+  function drawBarry() {
+    const m = Math.min(W, H), s = m * 0.0019;
+    const under = V.dive || V.mash;
+    ctx.save(); ctx.translate(V.x, V.y); ctx.rotate(V.ang + Math.PI / 2);
+    if (under) { ctx.globalAlpha = 0.4; ctx.scale(0.7, 0.7); }
+    if (V.sting > 0.9 || (V.gasp > 0 && Math.floor(T * 10) % 2)) ctx.globalAlpha *= 0.5;
+    const paddle = Math.sin(T * (Math.hypot(V.vx, V.vy) > 10 ? 9 : 3)) * 0.35;
+    ctx.scale(s * 26, s * 26);
+    ctx.lineWidth = 0.09; ctx.strokeStyle = '#2a1408';
+    // rear flippers
+    for (const sd of [-1, 1]) { ctx.save(); ctx.translate(sd * 0.35, 1.25); ctx.rotate(sd * (0.3 + paddle)); ctx.fillStyle = '#6e4a32'; ctx.beginPath(); ctx.ellipse(0, 0.35, 0.22, 0.45, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore(); }
+    // front flippers
+    for (const sd of [-1, 1]) { ctx.save(); ctx.translate(sd * 0.7, -0.2); ctx.rotate(sd * (0.9 - paddle)); ctx.fillStyle = '#6e4a32'; ctx.beginPath(); ctx.ellipse(0, 0.35, 0.2, 0.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore(); }
+    // body + head
+    ctx.fillStyle = '#9b6a48'; ctx.beginPath(); ctx.ellipse(0, 0.3, 0.75, 1.15, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#a8775a'; ctx.beginPath(); ctx.ellipse(0, -0.85, 0.55, 0.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e8d8c0'; ctx.beginPath(); ctx.ellipse(0, -1.18, 0.32, 0.2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#fffaf0'; ctx.lineWidth = 0.12; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-0.13, -1.2); ctx.lineTo(-0.16, -1.65); ctx.moveTo(0.13, -1.2); ctx.lineTo(0.16, -1.65); ctx.stroke();
+    ctx.fillStyle = '#1d1712'; ctx.beginPath(); ctx.arc(-0.22, -0.95, 0.07, 0, Math.PI * 2); ctx.arc(0.22, -0.95, 0.07, 0, Math.PI * 2); ctx.fill();
+    if (V.wear) { ctx.save(); ctx.translate(0, -0.7); ctx.fillStyle = '#5a4636'; diveShape(ctx, V.wear.type, 0.45, 1); ctx.fill(); ctx.restore(); }
+    ctx.restore();
+  }
+  function drawLungs(x, y, frac) {
+    ctx.save(); ctx.translate(x, y);
+    for (const sd of [-1, 1]) {
+      ctx.save(); ctx.scale(sd, 1);
+      ctx.beginPath(); ctx.moveTo(4, -18); ctx.quadraticCurveTo(26, -20, 26, 4); ctx.quadraticCurveTo(26, 22, 8, 20); ctx.quadraticCurveTo(3, 4, 4, -18); ctx.closePath();
+      ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fill();
+      ctx.save(); ctx.clip(); ctx.fillStyle = frac < 0.25 && Math.floor(T * 6) % 2 ? '#ff6b5b' : '#ff96aa';
+      ctx.fillRect(0, 22 - 42 * frac, 30, 42 * frac); ctx.restore();
+      ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 2.5; ctx.stroke(); ctx.restore();
+    }
+    ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, -26); ctx.lineTo(0, -6); ctx.stroke();
+    ctx.restore();
+  }
+  function drawDive() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const A = diveArea(), m = Math.min(W, H);
+    // water
+    const gr = ctx.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#1f7fb0'); gr.addColorStop(1, '#3cb7c9');
+    ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+    ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 2;
+    for (let i = 0; i < 26; i++) { const x = (i * 97 + T * 18) % (W + 80) - 40, y = A.y0 + ((i * 61) % Math.max(1, (A.y1 - A.y0))); ctx.beginPath(); ctx.arc(x, y, 18, 3.6, 5.8); ctx.stroke(); }
+    ctx.restore();
+    // current band
+    ctx.save(); ctx.globalAlpha = 0.15; ctx.fillStyle = '#ffffff'; const cy = (A.y0 + A.y1) / 2, ch = (A.y1 - A.y0) * 0.12;
+    for (let i = 0; i < 8; i++) { const x = ((i * 120 + T * 60) % (W + 120)) - 60; ctx.fillRect(x, cy - 2 + Math.sin(i) * ch * 0.6, 40, 3); }
+    ctx.restore();
+    V.items.forEach(drawItemShadow);
+    // beach + dock
+    ctx.fillStyle = '#e8cf95'; ctx.fillRect(0, A.y1, W, H - A.y1);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(0, A.y1 - 4, W, 6);
+    ctx.fillStyle = '#9b6b3d'; ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 3;
+    ctx.fillRect(A.dock.x0, A.dock.y0, A.dock.x1 - A.dock.x0, A.dock.y1 - A.dock.y0 + 20); ctx.strokeRect(A.dock.x0, A.dock.y0, A.dock.x1 - A.dock.x0, A.dock.y1 - A.dock.y0 + 20);
+    for (let k = 1; k < 5; k++) { const y = A.dock.y0 + k * 12; ctx.beginPath(); ctx.moveTo(A.dock.x0, y); ctx.lineTo(A.dock.x1, y); ctx.stroke(); }
+    label('DOCK', W / 2, A.dock.y0 - 12, 18, '#fff3d6');
+    // jellyfish
+    V.jelly.forEach((j) => {
+      ctx.save(); ctx.translate(j.x, j.y); ctx.globalAlpha = 0.85;
+      ctx.fillStyle = 'rgba(255,170,220,0.8)'; ctx.strokeStyle = '#7a2a5a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, m * 0.04, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2 + Math.sin(T * 2 + k) * 0.2; ctx.beginPath(); ctx.moveTo(Math.cos(a) * m * 0.04, Math.sin(a) * m * 0.04); ctx.lineTo(Math.cos(a) * m * 0.065, Math.sin(a) * m * 0.065); ctx.stroke(); }
+      ctx.restore();
+    });
+    V.rings.forEach((r) => { ctx.save(); ctx.globalAlpha = 1 - r.t / 0.9; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(r.x, r.y, (r.small ? 10 : 18) + r.t * (r.small ? 30 : 70), 0, Math.PI * 2); ctx.stroke(); ctx.restore(); });
+    drawBarry();
+    // mash meter
+    if (V.mash) {
+      const w = m * 0.5, x = V.x - w / 2, y = V.y - m * 0.16;
+      ctx.save(); ctx.fillStyle = 'rgba(29,23,18,0.8)'; ctx.fillRect(x - 4, y - 4, w + 8, 22); ctx.fillStyle = '#ffd23f'; ctx.fillRect(x, y, w * Math.max(0, Math.min(1, V.mash.prog)), 14); ctx.restore();
+      label('SMASH DIVE!', V.x, y - 18, m * 0.055, '#ffd23f');
+    }
+    // breath (lungs) under the HUD
+    drawLungs(40, L.top + 34, Math.max(0, V.breath / V.breathMax));
+    label('Breath', 92, L.top + 34, 15, '#fff3d6');
+    // DIVE button
+    const b = A.btn, ready = V.items.some((i) => Math.hypot(i.x - V.x, i.y - V.y) < i.r + m * 0.05);
+    ctx.save();
+    const pulse = (ready || V.mash) ? 1 + Math.sin(T * 10) * 0.06 : 1;
+    ctx.translate(b.x, b.y); ctx.scale(pulse, pulse);
+    ctx.fillStyle = V.gasp > 0 ? '#bbb' : '#ffd23f'; ctx.strokeStyle = '#2a1408'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(0, 0, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+    label('DIVE', b.x, b.y, b.r * 0.55, '#2a1408');
+    if (V.t < V.intro) {
+      const k = Math.min(1, V.t / 0.25), sc = 0.5 + 0.5 * easeOutBack(k);
+      ctx.save(); ctx.translate(W / 2, H * 0.36); ctx.scale(sc, sc);
+      label('DIVE TIME!', 0, 0, m * 0.12, '#ffd23f', -0.05);
+      label('Swim over shadows, tap DIVE. Bubbles = oysters!', 0, m * 0.1, m * 0.042, '#fff3d6');
+      ctx.restore();
+    } else if (V.left < 10 && V.bag.length) label('Head to the dock!', W / 2, A.y0 + 20, m * 0.06, '#fff3d6');
+    drawPopups();
+  }
+  function endDive() {
+    V.over = true; state = 'result';
+    if (V.bag.length) { V.lost += V.bag.length; V.bag = []; }
+    hudLabels(['Working at', 'Shucked', 'Earned']);
+    const cap = C.stockCap ?? 40;
+    const addS = Math.max(0, Math.min(V.caught.small, cap - stockCount()));
+    SAVE.stock.small += addS;
+    const addB = Math.max(0, Math.min(V.caught.big, cap - stockCount()));
+    SAVE.stock.big += addB;
+    const n = addS + addB, saved = n * oysterPrice(venue());
+    const xp = (V.caught.small + V.caught.big * 3) * 2;
+    SAVE.xp.spd += xp; SAVE.xpTotal = (SAVE.xpTotal || 0) + xp;
+    writeSave(); SFX.orderUp();
+    const row = (l, v, cls = '') => `<div class="line ${cls}"><span>${l}</span><b>${v}</b></div>`;
+    $('resultTitle').textContent = `Catch of the day: ${V.caught.small + V.caught.big}`;
+    $('resultTag').textContent = 'Into the cooler';
+    $('resultBody').innerHTML = `
+      <p class="sub">Barry brought home ${V.caught.small + V.caught.big} oyster${V.caught.small + V.caught.big === 1 ? '' : 's'}</p>
+      <div class="receipt">
+        ${row('Small oysters', V.caught.small)}
+        ${row('Big oysters (sell for more)', V.caught.big)}
+        ${row('Junk dug up', V.junk)}
+        ${V.lost ? row('Lost (pinched or not delivered)', V.lost, 'neg') : ''}
+        ${row('Supplier money saved', money(saved), 'total')}
+      </div>
+      <p class="fine">Your own oysters get shucked first next shift, for free. Small ones are crusty with barnacles; big ones pay more.${n < V.caught.small + V.caught.big ? ' The cooler is full!' : ''}</p>
+      <div class="xpline"><span class="xpchip" style="--c:#5cc94a">Speed +${xp}</span></div>
+      <div class="cashline"><span>Cooler</span><strong>${stockCount()}</strong></div>`;
+    setResultButtons('hub');
+    showScreen('result');
+  }
+
   // ---------- Loop ----------
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     if (state === 'lemon' || (state === 'result' && M && M.over)) { updateLemons(dt); if (M) drawLemons(); }
+    else if (state === 'dive' || (state === 'result' && V && V.over)) { T += dt; updateDive(dt); if (V) drawDive(); }
     else if (state === 'timelapse') { T += dt; updateLapse(dt); drawBackdrop(); }
     else if (state === 'title' || state === 'hub') { update(dt); drawBackdrop(); }
     else { update(dt); draw(); }
@@ -2012,7 +2495,7 @@
   // Read-only peek for debugging in the console.
   window.__shuck = { get oyster() { return cur && { shape: cur.shape, flip: cur.flip, pts: cur.pts, phase,
                        barn: (cur.barn || []).map((b) => Object.assign(barnPos(cur, b), { alive: b.alive, r: b.r })) }; },
-                     get shift() { return G; }, get save() { return SAVE; }, get lemons() { return M; } };
+                     get shift() { return G; }, get save() { return SAVE; }, get lemons() { return M; }, get dive() { return V; } };
 
   window.addEventListener('resize', layout);
   if (window.visualViewport) window.visualViewport.addEventListener('resize', layout);

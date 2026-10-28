@@ -16,6 +16,8 @@ window.SHUCK_CONFIG = {
   //   tint:              color wash over the counter so each place feels different
   //   barnacles:         [min, max] barnacles per oyster that must be flicked off first
   //   startStars:        reputation you start with there
+  //   lemonRequired:     oysters served without a lemon pay half
+  //   lemonButton:       the octopus lemon button shows up during shifts (tap it, slice the lemon for more wedges)
   //   scenes:            the place from outside at day / sunset / night / sunrise; shown behind the menus
   //                      and as a timelapse between shifts. Leave out to skip the timelapse.
   venues: [
@@ -25,11 +27,11 @@ window.SHUCK_CONFIG = {
                 night: 'assets/shack_night.webp', sunrise: 'assets/shack_sunrise.webp' } },
     { id: 'boardwalk', name: 'Boardwalk Raw Bar',  cost: 200,  barnacles: [2, 3],  orderMin: 12, orderMax: 18, secsPerOyster: 7,   pay: 5,
       blurb: 'Not the freshest oysters. Flick the barnacles off before you shuck, or ouch.', tint: '#ffd9b0' },
-    { id: 'pier',      name: 'Pier 9 Oyster House', cost: 1200, barnacles: [2, 4], orderMin: 18, orderMax: 24, secsPerOyster: 5.5, pay: 8,
+    { id: 'pier', lemonRequired: true, lemonButton: true,      name: 'Pier 9 Oyster House', cost: 1200, barnacles: [2, 4], orderMin: 18, orderMax: 24, secsPerOyster: 5.5, pay: 8,
       blurb: 'A real restaurant with real tables. Two dozen at a time.', tint: '#cfe3ff' },
-    { id: 'downtown',  name: 'Downtown Oyster Bar', cost: 3500, barnacles: [3, 5], orderMin: 24, orderMax: 36, secsPerOyster: 4.5, pay: 12,
+    { id: 'downtown', lemonRequired: true, lemonButton: true,  name: 'Downtown Oyster Bar', cost: 3500, barnacles: [3, 5], orderMin: 24, orderMax: 36, secsPerOyster: 4.5, pay: 12,
       blurb: 'After-work crowd, big platters, no patience.', tint: '#e6d2ff' },
-    { id: 'palace',    name: 'The Pearl Palace',    cost: 9000, barnacles: [3, 5], orderMin: 36, orderMax: 48, secsPerOyster: 3.6, pay: 18,
+    { id: 'palace', lemonRequired: true, lemonButton: true,    name: 'The Pearl Palace',    cost: 9000, barnacles: [3, 5], orderMin: 36, orderMax: 48, secsPerOyster: 3.6, pay: 18,
       blurb: 'Chandeliers and fancy hats. Four dozen, perfect, right now.', tint: '#ffe7a0' },
   ],
 
@@ -59,6 +61,26 @@ window.SHUCK_CONFIG = {
     { id: 'radio', name: 'Radio', tiers: [
       { name: 'No Radio',    cost: 0,  desc: 'Just the waves.' },
       { name: 'Beach Radio', cost: 40, desc: 'Three stations of 8-bit beach tunes. Tap the Radio button to switch.' },
+    ] },
+    { id: 'fins', name: 'Flippers', tiers: [
+      { name: 'Bare Flippers',   cost: 0,   swim: 1.0,  desc: "Barry's own flippers. Slow and floaty." },
+      { name: 'Swim Fins',       cost: 120, swim: 1.3,  needs: 'boardwalk', desc: 'Barry swims 30% faster.' },
+      { name: 'Turbo Fins',      cost: 500, swim: 1.65, needs: 'pier', desc: 'Zoom. 65% faster.' },
+    ] },
+    { id: 'lungs', name: 'Lungs', tiers: [
+      { name: 'Normal Lungs',    cost: 0,   breath: 1.0, desc: 'A few dives, then he needs air.' },
+      { name: 'Breathing Lessons', cost: 150, breath: 1.35, needs: 'boardwalk', desc: '35% more breath per dive trip.' },
+      { name: 'Big Walrus Lungs', cost: 600, breath: 1.8, needs: 'pier', desc: 'Almost twice the breath.' },
+    ] },
+    { id: 'bag', name: 'Flipper bag', tiers: [
+      { name: 'Small Net Bag',   cost: 0,   bag: 3, desc: 'Holds 3 oysters before the dock.' },
+      { name: 'Big Net Bag',     cost: 100, bag: 5, needs: 'boardwalk', desc: 'Holds 5 oysters.' },
+      { name: 'Huge Basket',     cost: 450, bag: 8, needs: 'pier', desc: 'Holds 8 oysters.' },
+    ] },
+    { id: 'dgrip', name: 'Dive grip', tiers: [
+      { name: 'Bare Tusks',      cost: 0,   mash: 1.0, desc: 'Big oysters usually get away.' },
+      { name: 'Tusk Polish',     cost: 140, mash: 1.6, needs: 'boardwalk', desc: 'Each smash counts 60% more on big oysters.' },
+      { name: 'Oyster Tongs',    cost: 550, mash: 2.3, needs: 'pier', desc: 'Big oysters barely stand a chance.' },
     ] },
     { id: 'jar', name: 'Tip jar', tiers: [
       { name: 'Paper Cup',        cost: 0,    cash: 1.0,  desc: 'No extra tips.' },
@@ -119,6 +141,17 @@ window.SHUCK_CONFIG = {
     { name: 'Oyster Farm',         barnacles: -2, pay: 1.2,  costMult: 70,  desc: 'Clean shells. Oysters sell for 20% more.' },
     { name: 'Premium Farm',        barnacles: -3, pay: 1.35, costMult: 160, desc: 'Spotless and famous. Oysters sell for 35% more.' },
   ],
+
+  // ---------------- Lemons and oyster supply ----------------
+  // Lemon Toss stocks lemon wedges. Every oyster served with a lemon earns a lemon tip.
+  // Oysters come from your own catch first (free, from Barry's Dive), then the supplier (costs money).
+  lemonTip: 0.5,               // lemon tip = restaurant pay x this, per oyster served with a lemon
+  lemonCap: 60,                // most lemon wedges you can keep
+  oysterCost: 0.4,             // supplier price per oyster = restaurant pay x this (x1.25 per supplier upgrade)
+  bigOysterPay: 1.5,           // big oysters you caught yourself sell for this much more
+  stockCap: 40,
+  lemonButtonCooldown: 1.5,   // seconds between octopus lemon throws                // most caught oysters the cooler holds
+  diveFrom: 'shack',           // Barry's Dive shows up as a prep choice from this restaurant on
 
   // Money
   gradePay: [2.0, 1.6, 1.3, 1.0, 0.7, 0.35],   // pay multiplier for each grade below, best first
@@ -191,6 +224,20 @@ window.SHUCK_CONFIG = {
         { name: 'Regeneration', desc: 'Cuts heal on their own, no bandages needed. Blood goes everywhere. Except the oysters.' },
       ] },
     ],
+  },
+
+  // ---------------- Barry's Dive ----------------
+  dive: {
+    duration: 45,              // seconds
+    items: 12,                 // shadows in the water at once (oysters and look-alike junk)
+    jellyfish: 2,
+    diveCost: 16,              // breath per dive (out of 100)
+    diveTime: 0.7,             // seconds underwater per dive
+    refill: 14,                // breath back per second while floating
+    mashPer: 0.085,            // progress per DIVE smash on a big oyster (x dive grip)
+    mashDecay: 0.5,            // big oyster pulls away this fast
+    mashBreath: 18,            // breath per second while wrestling a big one
+    gaspTime: 1.4,
   },
 
   // ---------------- Mini games (between shifts, just for fun) ----------------

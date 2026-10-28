@@ -102,6 +102,16 @@
     box-shadow: 0 5px 0 var(--ink); transition: transform 0.06s, box-shadow 0.06s;
   }
   .btn:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--ink); }
+  .prep { margin-top: 10px; }
+  .prep h3 { margin: 4px 0 2px; font-size: 20px; text-align: center; }
+  .prep .why { margin: 0 0 8px; font-size: 13px; text-align: center; opacity: .8; }
+  .prep .cards { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+  .pcard { font: inherit; text-align: left; border: 3px solid #2a1408; border-radius: 12px; padding: 9px 10px; background: var(--c, #ffd23f); color: #2a1408; cursor: pointer; box-shadow: 0 4px 0 #2a1408; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .pcard:active { transform: translateY(3px); box-shadow: 0 1px 0 #2a1408; }
+  .pcard b { font-size: 17px; line-height: 1.1; }
+  .pcard span { font-size: 12.5px; line-height: 1.25; }
+  .pcard em { font-style: normal; font-weight: 700; font-size: 12.5px; background: rgba(255,255,255,.55); border-radius: 6px; padding: 1px 6px; align-self: flex-start; }
+  .pcard.soon { background: #d9cbb0; opacity: .6; cursor: default; box-shadow: none; }
   .btn.ghost { background: transparent; font-size: 18px; box-shadow: none; padding: 10px; }
   .arcade-link { font: 800 13px/1 var(--body); color: var(--muted); }
   .stamp { font: 400 16px/1 var(--display); color: var(--tomato); }
@@ -349,6 +359,8 @@
       <h2 id="resultTitle">Order up!</h2>
       <div id="resultBody"></div>
       <button class="btn" id="btnBackToShack" type="button">Back to the shack</button>
+      <div class="prep" id="prepPick" hidden></div>
+      <button class="btn" id="btnDive" type="button" hidden style="background:#7be0ff">Go diving (cheaper oysters)</button>
       <button class="btn ghost" id="btnSkipMini" type="button" hidden>Skip to the shack</button>
     </div>
   </section>
