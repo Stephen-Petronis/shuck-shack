@@ -305,7 +305,7 @@
     G = { venue: v, need, done: 0, clockMax: shiftClock(need, v), clock: 0, par: v.secsPerOyster * C.parFactor * (perk('spd', 4) ? 1.3 : 1), xp: { acc: 0, spd: 0, bld: 0 },
           pay: 0, tips: 0, accSum: 0, cuts: 0, served: 0, bandages: [], fast: 0,
           wounds: 0, tapsDone: 0, stun: 0, lastSlip: -9, dripT: 0, drips: [], splats: [], bloody: 0, bloodLoss: 0,
-          bill: 0, fromSupplier: 0, own: 0, ownBig: 0, lemonTips: 0, lemoned: 0, noLemon: 0, flyLemons: [], lemonCd: 0, lemonsCut: 0 };
+          bill: 0, fromSupplier: 0, own: 0, ownBig: 0, lemonTips: 0, lemoned: 0, noLemon: 0, flyLemons: [], lemonCd: 0, lemonsCut: 0, streaks: [], swipeUntil: 0, rsp: 0 };
     G.clock = G.clockMax;
     fx.lid = null; fx.stamp = null; fx.popups = []; fx.drops = []; fx.splash = []; hurt = null; cur = null;
     state = 'play'; phase = 'ready'; readyT = T; paused = false;
@@ -629,7 +629,8 @@
     noise(0.15, 0.08, 1400); tone(420, 0.1, 'triangle', 0.05, 640);
   }
   function sliceAt(x1, y1, x2, y2) {
-    if (!G || !G.flyLemons.length) return;
+    if (!G || !G.flyLemons.length) return false;
+    let hit = false;
     const len = Math.hypot(x2 - x1, y2 - y1);
     if (len < Math.min(W, H) * 0.03) return;   // has to be a quick swipe
     const out = [];
@@ -638,6 +639,7 @@
       const t = Math.max(0, Math.min(1, ((p.x - x1) * (x2 - x1) + (p.y - y1) * (y2 - y1)) / (len * len)));
       const d = Math.hypot(x1 + (x2 - x1) * t - p.x, y1 + (y2 - y1) * t - p.y);
       if (d > p.r * 1.1) { out.push(p); return; }
+      hit = true;
       const nx = -(y2 - y1) / len, ny = (x2 - x1) / len, kick = Math.min(W, H) * 0.35;
       const kind = p.kind === 'whole' ? 'half' : 'quarter';
       for (const s of [-1, 1]) out.push({ ...p, kind, art: s, vx: p.vx + nx * kick * s, vy: Math.min(p.vy, 0) - kick * 0.4 + ny * kick * s * 0.3, r: p.r * 0.8, vr: s * 6, cutT: T });
@@ -650,9 +652,11 @@
       }
     });
     G.flyLemons = out;
+    return hit;
   }
   function updateFly(dt) {
     if (!G) return;
+    G.streaks.forEach((s) => { s.t += dt; }); G.streaks = G.streaks.filter((s) => s.t < 0.2);
     G.lemonCd = Math.max(0, (G.lemonCd || 0) - dt);
     const b = octoBtn();
     G.flyLemons.forEach((p) => {
@@ -699,6 +703,9 @@
   }
   function drawFly() {
     if (!G) return;
+    ctx.save(); ctx.lineCap = 'round';
+    G.streaks.forEach((s) => { const a = 1 - s.t / 0.2; ctx.strokeStyle = `rgba(255,255,255,${0.85 * a})`; ctx.lineWidth = 9 * a + 2; ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke(); });
+    ctx.restore();
     G.flyLemons.forEach((p) => {
       const art = LEMON_ART[p.kind === 'whole' ? 'whole' : p.kind === 'half' ? 'half' : (p.art > 0 ? 'quarterA' : 'quarterB')], im = IMG[art.key];
       ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
@@ -747,7 +754,7 @@
     const p = localPos(e);
     if (state === 'play' && G && G.flyLemons.length && !paused) {
       const q = swipes.get(e.pointerId);
-      if (q) sliceAt(q.x, q.y, p.x, p.y);
+      if (q && sliceAt(q.x, q.y, p.x, p.y) && e.pointerId === pointer.id) G.swipeUntil = T + 0.3;   // slicing a lemon is not shucking
       swipes.set(e.pointerId, p);
     } else swipes.set(e.pointerId, p);
     if (e.pointerType === 'mouse') pointer.hover = true;
@@ -1185,9 +1192,16 @@
         const wob = (kt.wobble * speedF * (perk('acc', 2) ? 0.5 : 1) + G.wounds * C.woundWobble) * L.D;
         const nx = knife.x + wob * (Math.sin(T * 6.1) + 0.55 * Math.sin(T * 15.7 + 1.3));
         const ny = knife.y + wob * (Math.cos(T * 5.3 + 0.7) + 0.55 * Math.sin(T * 12.9 + 2.1));
+        // DRAWING or SWIPING? Fast finger = swipe (flicks barnacles, slices lemons) and never traces the shell.
+        const rawSp = Math.hypot(pointer.x - (pointer.prevX ?? pointer.x), pointer.y - (pointer.prevY ?? pointer.y)) / Math.max(dt, 1e-3);
+        G.rsp = (G.rsp || 0) + (rawSp - (G.rsp || 0)) * Math.min(1, dt * 30);
+        if (G.rsp > Math.min(W, H) * (C.swipeSpeed ?? 2.2)) G.swipeUntil = T + (C.swipeHold ?? 0.15);
         const flicked = barnacleCheck(armTip.x, armTip.y, nx, ny, dt);
+        if (flicked) G.swipeUntil = T + 0.25;
+        const swiping = T < (G.swipeUntil || 0);
+        if (swiping && rawSp > 30) G.streaks.push({ x1: pointer.prevX ?? pointer.x, y1: pointer.prevY ?? pointer.y, x2: pointer.x, y2: pointer.y, t: 0 });
         pointer.prevX = pointer.x; pointer.prevY = pointer.y;
-        if (flicked) { pointer.lastX = nx; pointer.lastY = ny; } else traceTo(nx, ny);
+        if (flicked || swiping) { pointer.lastX = nx; pointer.lastY = ny; } else traceTo(nx, ny);
         armTip.x = nx; armTip.y = ny;
       }
 
@@ -2498,7 +2512,7 @@
   }
 
   // Read-only peek for debugging in the console.
-  window.__shuck = { get oyster() { return cur && { shape: cur.shape, flip: cur.flip, pts: cur.pts, phase,
+  window.__shuck = { get oyster() { return cur && { shape: cur.shape, flip: cur.flip, pts: cur.pts, phase, nCovered: cur.nCovered,
                        barn: (cur.barn || []).map((b) => Object.assign(barnPos(cur, b), { alive: b.alive, r: b.r })) }; },
                      get shift() { return G; }, get save() { return SAVE; }, get lemons() { return M; }, get dive() { return V; } };
 

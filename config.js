@@ -150,7 +150,10 @@ window.SHUCK_CONFIG = {
   oysterCost: 0.4,             // supplier price per oyster = restaurant pay x this (x1.25 per supplier upgrade)
   bigOysterPay: 1.5,           // big oysters you caught yourself sell for this much more
   stockCap: 40,
-  lemonButtonCooldown: 1.5,   // seconds between octopus lemon throws                // most caught oysters the cooler holds
+  lemonButtonCooldown: 1.5,
+  swipeSpeed: 2.2,            // finger faster than this (screen-widths per second) = a SWIPE: flicks barnacles and
+                              // slices lemons but never traces the shell. Slower = drawing (shucking).
+  swipeHold: 0.15,            // seconds a swipe stays a swipe after you slow down   // seconds between octopus lemon throws                // most caught oysters the cooler holds
   diveFrom: 'shack',           // Barry's Dive shows up as a prep choice from this restaurant on
 
   // Money
