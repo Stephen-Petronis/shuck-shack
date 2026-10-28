@@ -35,6 +35,9 @@ Oysters have to come from somewhere, and that's the choice between shifts:
 - Top-down like Animal Crossing. Barry the walrus paddles on the surface; shadows and bubbles show what's
   below; DIVE on a shadow. Lungs instead of an air tank; flipper bag; dock to drop off; jellyfish and currents.
 - Big oysters flee: smash the button to catch them (see Oyster supply above).
+- **Spot the oyster:** the water is full of look-alike junk in similar colors but different shapes: old
+  shoes, starfish, rubber gloves, bottles, rocks. Part of getting good is learning which shadow/shape/color
+  is really an oyster. Diving on junk wastes breath (and is funny: Barry pops up wearing a boot).
 
 ## Stage 3: Pier 9 — TODO
 - **Timer mode:** no more fixed orders. Shuck as many as you can before the clock runs out.
