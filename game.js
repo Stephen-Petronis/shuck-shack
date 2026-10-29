@@ -794,6 +794,7 @@
     pointer.id = e.pointerId; pointer.down = true; pointer.type = e.pointerType; pointer.x = p.x; pointer.y = p.y;
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     if (state === 'ice') { if (!paused) iceAimAt(p.x, p.y); e.preventDefault(); return; }
+    if (state === 'dive' && V) V.joy = { x: p.x, y: p.y };
     if (state === 'lemon' || state === 'dive') { e.preventDefault(); return; }
     if (state === 'timelapse') { lapse = null; openHub('work'); return; }
     if (state !== 'play' || paused) return;
@@ -823,6 +824,7 @@
     if (state === 'ice' && pointer.down && !paused) iceAimAt(p.x, p.y);
   });
   function endPointer(e) { swipes.delete(e.pointerId); if (pointer.id !== e.pointerId) return;
+    if (V) V.joy = null;
     if (state === 'ice' && e.type === 'pointerup' && !paused) iceThrow(); else if (state === 'ice' && I) I.aim = null; pointer.id = null; pointer.down = false; pointer.tracing = false; }
   canvas.addEventListener('pointerup', endPointer);
   canvas.addEventListener('pointercancel', endPointer);
@@ -2360,6 +2362,34 @@
     else popText('GASP!', true);
     tone(600, 0.3, 'sawtooth', 0.06, 200);
   }
+  const joyR = () => Math.max(46, Math.min(70, Math.min(W, H) * 0.13));
+  const keys = {};
+  window.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; if (state === 'dive' && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); diveTap(); } });
+  window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+  function joyVec() {
+    let x = 0, y = 0;
+    if (V.joy && pointer.down) {
+      const dx = pointer.x - V.joy.x, dy = pointer.y - V.joy.y, d = Math.hypot(dx, dy), R = joyR();
+      if (d > R * 0.12) { const k = Math.min(1, d / R); x = dx / d * k; y = dy / d * k; }
+    }
+    const kx = (keys.arrowright || keys.d ? 1 : 0) - (keys.arrowleft || keys.a ? 1 : 0), ky = (keys.arrowdown || keys.s ? 1 : 0) - (keys.arrowup || keys.w ? 1 : 0);
+    if (kx || ky) { const d = Math.hypot(kx, ky); x = kx / d; y = ky / d; }
+    return { x, y };
+  }
+  function drawJoystick() {
+    const R = joyR(), on = V.joy && pointer.down;
+    const bx = on ? V.joy.x : R + 24, by = on ? V.joy.y : H - R - 70;
+    ctx.save();
+    ctx.globalAlpha = on ? 0.9 : 0.35 + 0.1 * Math.sin(T * 3);
+    ctx.fillStyle = 'rgba(29,23,18,0.35)'; ctx.strokeStyle = '#fff3d6'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(bx, by, R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    let kx = bx, ky = by;
+    if (on) { const dx = pointer.x - bx, dy = pointer.y - by, d = Math.hypot(dx, dy) || 1, k = Math.min(d, R); kx = bx + dx / d * k; ky = by + dy / d * k; }
+    ctx.fillStyle = '#ffd23f'; ctx.strokeStyle = '#2a1408';
+    ctx.beginPath(); ctx.arc(kx, ky, R * 0.42, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+    if (!on) label('Drag to swim', bx, by - R - 14, 15, 'rgba(255,243,214,0.85)');
+  }
   function updateDive(dt) {
     if (!V) return;
     if (paused) return;
@@ -2369,10 +2399,11 @@
     if (live) { V.left -= dt; if (V.left <= 0) { endDive(); return; } }
     // swimming
     const under = V.dive || V.mash;
-    if (!under && V.gasp <= 0 && pointer.down && pointer.diving !== true) {
-      const dx = pointer.x - V.x, dy = pointer.y - V.y, dist = Math.hypot(dx, dy);
-      const sp = m * 0.42 * V.g.swim * Math.min(1, dist / 80);
-      const tvx = dist > 4 ? dx / dist * sp : 0, tvy = dist > 4 ? dy / dist * sp : 0;
+    // virtual joystick: thumb down anywhere, push the way you want Barry to swim (arrow keys / WASD work too)
+    const js = joyVec();
+    if (!under && V.gasp <= 0 && (js.x || js.y)) {
+      const sp = m * 0.42 * V.g.swim;
+      const tvx = js.x * sp, tvy = js.y * sp;
       V.vx += (tvx - V.vx) * Math.min(1, dt * 2.6); V.vy += (tvy - V.vy) * Math.min(1, dt * 2.6);
     } else { V.vx *= Math.pow(0.25, dt); V.vy *= Math.pow(0.25, dt); }
     // current: a gentle push to the right in the middle band
@@ -2542,11 +2573,12 @@
     ctx.beginPath(); ctx.arc(0, 0, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.restore();
     label('DIVE', b.x, b.y, b.r * 0.55, '#2a1408');
+    if (!V.over) drawJoystick();
     if (V.t < V.intro) {
       const k = Math.min(1, V.t / 0.25), sc = 0.5 + 0.5 * easeOutBack(k);
       ctx.save(); ctx.translate(W / 2, H * 0.36); ctx.scale(sc, sc);
       label('DIVE TIME!', 0, 0, m * 0.12, '#ffd23f', -0.05);
-      label('Swim over shadows, tap DIVE. Bubbles = oysters!', 0, m * 0.1, m * 0.042, '#fff3d6');
+      label('Drag anywhere to swim, tap DIVE on shadows. Bubbles = oysters!', 0, m * 0.1, m * 0.04, '#fff3d6');
       ctx.restore();
     } else if (V.left < 10 && V.bag.length) label('Head to the dock!', W / 2, A.y0 + 20, m * 0.06, '#fff3d6');
     drawPopups();
